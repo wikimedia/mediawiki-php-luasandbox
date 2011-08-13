@@ -1,0 +1,6 @@
+This is a PHP extension. To compile it:
+
+ $ phpize
+ $ ./configure
+ $ make
+
