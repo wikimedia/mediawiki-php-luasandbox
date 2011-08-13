@@ -15,9 +15,12 @@ if test "$PHP_LUASANDBOX" != "no"; then
 	m4_include([m4/pkg.m4])
 	PKG_PROG_PKG_CONFIG
 
-	dnl We need lua5.1 or fallback to luajit:
-	PKG_CHECK_MODULES([LUA], [lua5.1],, [
-		PKG_CHECK_MODULES([LUA], [luajit])
+	dnl We need lua or fallback to luajit.
+	dnl Under debian package is known as 'lua5.1'
+	PKG_CHECK_MODULES([LUA], [lua],, [
+		PKG_CHECK_MODULES([LUA], [lua5.1],, [
+			PKG_CHECK_MODULES([LUA], [luajit])
+		])
 	])
 
 	dnl LUA_LIBS and LUA_CFLAGS interprets them:
