@@ -26,8 +26,21 @@
  *     lua_tocfunction().
  *
  *   * Add CPU time limits.
+ *
+ *   Doing a longjmp() from a signal handler destroys anything that the 
+ *   call stack may have been modifying at the time. Allowing continued 
+ *   access to such state will allow security vulnerabilities (SIG32-C). 
+ *
+ *   So I propose having two timeouts. When the first expires, a debug hook 
+ *   is set which calls lua_error(), and a flag is set prohibiting dispatch
+ *   of any PHP callback. When the second expires, emergency action is 
+ *   taken. If a PHP callback has been dispatched and we are waiting for it
+ *   to return, zend_error() will need to be called with E_ERROR, to safely
+ *   destroy the PHP state. This mirrors the behaviour of normal Zend timeouts. 
+ *   Otherwise, lua_error() should be called, to return control to the 
+ *   lua_pcall() caller, which should then destroy the lua state.
+ *
  *   * Add LuaSandbox::getMemoryUsage().
- *   * Fix memory leak probably in 
  */
 
 #ifdef HAVE_CONFIG_H
