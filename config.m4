@@ -4,12 +4,6 @@ dnl config.m4 for extension luasandbox
 PHP_ARG_WITH(luasandbox, for luasandbox support,
 [  --with-luasandbox             Include luasandbox support])
 
-dnl TODO: make this find either lua or luajit as it is installed in various 
-dnl distros. Make a define available to C to indicate luajit is available 
-dnl as opposed to lua. Maybe use pkgconfig since the library file is in an
-dnl odd place. Allow the user to specify the include directory manually.
-dnl -- TS
-
 if test "$PHP_LUASANDBOX" != "no"; then
 	dnl Include pkg-config macros definitions:
 	m4_include([m4/pkg.m4])
