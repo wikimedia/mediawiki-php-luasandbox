@@ -26,5 +26,5 @@ if test "$PHP_LUASANDBOX" != "no"; then
 	AC_MSG_NOTICE(LUA: found LUA_LIBS: $LUA_LIBS)
 
 	PHP_SUBST(LUASANDBOX_SHARED_LIBADD)
-	PHP_NEW_EXTENSION(luasandbox, luasandbox.c, $ext_shared)
+	PHP_NEW_EXTENSION(luasandbox, luasandbox.c timer.c, $ext_shared)
 fi
