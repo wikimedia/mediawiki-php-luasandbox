@@ -31,7 +31,7 @@ PHP_METHOD(LuaSandbox, loadBinary);
 PHP_METHOD(LuaSandbox, setMemoryLimit);
 PHP_METHOD(LuaSandbox, setCPULimit);
 PHP_METHOD(LuaSandbox, callFunction);
-PHP_METHOD(LuaSandbox, register);
+PHP_METHOD(LuaSandbox, registerLibrary);
 
 PHP_METHOD(LuaSandboxFunction, call);
 PHP_METHOD(LuaSandboxFunction, dump);
@@ -59,6 +59,7 @@ struct _php_luasandbox_obj {
 	int is_cpu_limited;
 	struct timespec cpu_normal_limit;
 	struct timespec cpu_emergency_limit;
+	int function_index;
 };
 typedef struct _php_luasandbox_obj php_luasandbox_obj;
 
