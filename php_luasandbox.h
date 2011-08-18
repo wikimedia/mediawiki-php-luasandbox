@@ -27,17 +27,19 @@ PHP_RSHUTDOWN_FUNCTION(luasandbox);
 PHP_MINFO_FUNCTION(luasandbox);
 
 PHP_METHOD(LuaSandbox, loadString);
-PHP_METHOD(LuaSandbox, doString);
+PHP_METHOD(LuaSandbox, loadBinary);
 PHP_METHOD(LuaSandbox, setMemoryLimit);
 PHP_METHOD(LuaSandbox, setCPULimit);
 PHP_METHOD(LuaSandbox, callFunction);
 PHP_METHOD(LuaSandbox, register);
 
 PHP_METHOD(LuaSandboxFunction, call);
+PHP_METHOD(LuaSandboxFunction, dump);
 
 ZEND_BEGIN_MODULE_GLOBALS(luasandbox)
 	int signal_handler_installed;
 	struct sigaction old_handler;
+	HashTable * allowed_globals;
 ZEND_END_MODULE_GLOBALS(luasandbox)
 
 #ifdef ZTS

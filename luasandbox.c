@@ -1,22 +1,3 @@
-
-/*
- * To do:
- *   * Provide a LuaSandbox::doString() as a convenience wrapper for 
- *     LuaSandbox::loadString()->call(), analogous to luaL_dostring().
- *
- *   * Add a PHP method for registering callback functions individually.
- *
- *   * Provide a wrapper around the base library, which allows only a whitelist
- *     of functions, not including e.g. loadfile(). This is slightly tricky 
- *     because the functions are not exported from the shared library. It's 
- *     necessary to call luaopen_base() on a separate lua_State, and then to 
- *     copy each function pointer to the destination lua_State using 
- *     lua_tocfunction().
- *
- *   * Support lua_dump()
- *   * Protect LuaSandbox->loadString() against malicious binaries
- */
-
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -36,6 +17,7 @@
 #include "zend_exceptions.h"
 #include "php_luasandbox.h"
 #include "luasandbox_timer.h"
+#include "ext/standard/php_smart_str.h"
 
 static zend_object_value luasandbox_new(zend_class_entry *ce TSRMLS_DC);
 static lua_State * luasandbox_newstate(php_luasandbox_obj * intern);
@@ -47,9 +29,12 @@ static int luasandbox_free_zval_userdata(lua_State * L);
 static void *luasandbox_alloc(void *ud, void *ptr, size_t osize, size_t nsize);
 static int luasandbox_panic(lua_State * L);
 static lua_State * luasandbox_state_from_zval(zval * this_ptr TSRMLS_DC);
+static void luasandbox_load_helper(int binary, INTERNAL_FUNCTION_PARAMETERS);
 static int luasandbox_find_field(lua_State * L, int index, 
 	char * spec, int specLength);
 static void luasandbox_set_timespec(struct timespec * dest, double source);
+static int luasandbox_function_init(zval * this_ptr, php_luasandboxfunction_obj ** pfunc, 
+	lua_State ** pstate, php_luasandbox_obj ** psandbox TSRMLS_DC);
 static void luasandbox_call_helper(lua_State * L, php_luasandbox_obj * sandbox,
 	zval *** args, zend_uint numArgs, zval * return_value TSRMLS_DC);
 static int luasandbox_push_zval(lua_State * L, zval * z);
@@ -61,8 +46,56 @@ static php_luasandbox_obj * luasandbox_get_php_obj(lua_State * L);
 static void luasandbox_handle_error(lua_State * L, int status);
 static int luasandbox_push_hashtable(lua_State * L, HashTable * ht);
 static int luasandbox_call_php(lua_State * L);
+static int luasandbox_dump_writer(lua_State * L, const void * p, size_t sz, void * ud);
+static int luasandbox_base_tostring(lua_State * L);
 
 char luasandbox_timeout_message[] = "The maximum execution time for this script was exceeded";
+
+/**
+ * Allowed global variables. Omissions are:
+ *   * pcall, xpcall: Changing the protected environment won't work with our
+ *     current timeout method.
+ *   * loadfile: insecure.
+ *   * load, loadstring: Probably creates a protected environment so can't has 
+ *     the same problem as pcall. Also omitting these makes analysis of the 
+ *     code for runtime etc. feasible.
+ *   * print: Not compatible with a sandbox environment
+ *   * tostring: Provides addresses of tables and functions, which provides an 
+ *     easy ASLR workaround or heap address discovery mechanism for a memory 
+ *     corruption exploit.
+ *   * Any new or undocumented functions like newproxy.
+ *   * package: cpath, loadlib etc. are insecure.
+ *   * coroutine: Not useful for our application so unreviewed at present.
+ *   * io, file, os: insecure
+ *   * debug: Provides various ways to break the sandbox, such as setupvalue()
+ *     and getregistry().
+ */
+char * luasandbox_allowed_globals[] = {
+	// base
+	"assert",
+	"error",
+	"getmetatable",
+	"getfenv",
+	"getmetatable",
+	"ipairs",
+	"next",
+	"pairs",
+	"rawequal",
+	"rawget",
+	"rawset",
+	"select",
+	"setmetatable",
+	"tonumber",
+	"type",
+	"unpack",
+	"_G",
+	"_VERSION",
+	// libs
+	"string",
+	"table",
+	"math"
+};
+#define LUASANDBOX_NUM_ALLOWED_GLOBALS (sizeof(luasandbox_allowed_globals) / sizeof(char*))
 
 zend_class_entry *luasandbox_ce;
 zend_class_entry *luasandboxerror_ce;
@@ -73,6 +106,11 @@ ZEND_DECLARE_MODULE_GLOBALS(luasandbox);
 
 /** {{{ arginfo */
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_loadString, 0)
+	ZEND_ARG_INFO(0, code)
+	ZEND_ARG_INFO(0, chunkName)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_loadBinary, 0)
 	ZEND_ARG_INFO(0, code)
 	ZEND_ARG_INFO(0, chunkName)
 ZEND_END_ARG_INFO()
@@ -99,6 +137,10 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_INFO(arginfo_luasandboxfunction_call, 0)
 	ZEND_ARG_INFO(0, ...)
 ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO(arginfo_luasandboxfunction_dump, 0)
+ZEND_END_ARG_INFO()
+
 /* }}} */
 
 /** {{{ function entries */
@@ -108,6 +150,7 @@ const zend_function_entry luasandbox_functions[] = {
 
 const zend_function_entry luasandbox_methods[] = {
 	PHP_ME(LuaSandbox, loadString, arginfo_luasandbox_loadString, 0)
+	PHP_ME(LuaSandbox, loadBinary, arginfo_luasandbox_loadBinary, 0)
 	PHP_ME(LuaSandbox, setMemoryLimit, arginfo_luasandbox_setMemoryLimit, 0)
 	PHP_ME(LuaSandbox, setCPULimit, arginfo_luasandbox_setCPULimit, 0)
 	PHP_ME(LuaSandbox, callFunction, arginfo_luasandbox_callFunction, 0)
@@ -117,6 +160,7 @@ const zend_function_entry luasandbox_methods[] = {
 
 const zend_function_entry luasandboxfunction_methods[] = {
 	PHP_ME(LuaSandboxFunction, call, arginfo_luasandboxfunction_call, 0)
+	PHP_ME(LuaSandboxFunction, dump, arginfo_luasandboxfunction_dump, 0)
 	{NULL, NULL, NULL}
 };
 
@@ -154,6 +198,7 @@ ZEND_GET_MODULE(luasandbox)
  */
 PHP_MINIT_FUNCTION(luasandbox)
 {
+	int i;
 	/* If you have INI entries, uncomment these lines 
 	REGISTER_INI_ENTRIES();
 	*/
@@ -183,6 +228,14 @@ PHP_MINIT_FUNCTION(luasandbox)
 	luasandboxfunction_ce = zend_register_internal_class(&ce TSRMLS_CC);
 	luasandboxfunction_ce->create_object = luasandboxfunction_new;
 	
+	// Initialise LUASANDBOX_G(allowed_globals)
+	LUASANDBOX_G(allowed_globals) = pemalloc(sizeof(HashTable), 1);
+	zend_hash_init(LUASANDBOX_G(allowed_globals), LUASANDBOX_NUM_ALLOWED_GLOBALS, NULL, NULL, 1);
+	for (i = 0; i < LUASANDBOX_NUM_ALLOWED_GLOBALS; i++) {
+		zend_hash_update(LUASANDBOX_G(allowed_globals), 
+			luasandbox_allowed_globals[i], strlen(luasandbox_allowed_globals[i]) + 1,
+			"", 1, NULL);
+	}
 	return SUCCESS;
 }
 /* }}} */
@@ -191,6 +244,8 @@ PHP_MINIT_FUNCTION(luasandbox)
  */
 PHP_MSHUTDOWN_FUNCTION(luasandbox)
 {
+	zend_hash_destroy(LUASANDBOX_G(allowed_globals));
+	pefree(LUASANDBOX_G(allowed_globals), 1);
 	return SUCCESS;
 }
 /* }}} */
@@ -276,9 +331,41 @@ static lua_State * luasandbox_newstate(php_luasandbox_obj * intern)
 	lua_atpanic(L, luasandbox_panic);
 
 	// Load some relatively safe standard libraries
+	luaopen_base(L);
 	luaopen_string(L);
 	luaopen_table(L);
 	luaopen_math(L);
+
+	// Remove any globals that aren't in a whitelist. This is mostly to remove 
+	// unsafe functions from the base library.
+	lua_pushnil(L);
+	while (lua_next(L, LUA_GLOBALSINDEX) != 0) {
+		const char * key;
+		size_t key_len;
+		void * data;
+		lua_pop(L, 1);
+		if (lua_type(L, -1) != LUA_TSTRING) {
+			continue;
+		}
+		key = lua_tolstring(L, -1, &key_len);
+		if (zend_hash_find(LUASANDBOX_G(allowed_globals), 
+			(char*)key, key_len + 1, &data) == FAILURE) 
+		{
+			// Not allowed, delete it
+			lua_pushnil(L);
+			lua_setglobal(L, key);
+		}
+	}
+
+	// Install our own version of tostring
+	lua_pushcfunction(L, luasandbox_base_tostring);
+	lua_setglobal(L, "tostring");
+
+	// Remove string.dump: may expose private data
+	lua_getglobal(L, "string");
+	lua_pushnil(L);
+	lua_setfield(L, -2, "dump");
+	lua_pop(L, 1);
 
 	// Create a table for storing chunks
 	lua_newtable(L);
@@ -431,8 +518,8 @@ static lua_State * luasandbox_state_from_zval(zval * this_ptr TSRMLS_DC)
 }
 /* }}} */
 
-/** {{{ proto int LuaSandbox::loadString(string code, string chunkName) */
-PHP_METHOD(LuaSandbox, loadString)
+/** {{{ luasandbox_load_helper */
+static void luasandbox_load_helper(int binary, INTERNAL_FUNCTION_PARAMETERS)
 {
 	char *code, *chunkName = NULL;
 	int codeLength, chunkNameLength;
@@ -440,6 +527,7 @@ PHP_METHOD(LuaSandbox, loadString)
 	lua_State * L = luasandbox_state_from_zval(getThis() TSRMLS_CC);
 	size_t index;
 	php_luasandboxfunction_obj * func_obj;
+	int have_mark;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|s", 
 				&code, &codeLength, &chunkName, &chunkNameLength) == FAILURE) {
@@ -455,6 +543,21 @@ PHP_METHOD(LuaSandbox, loadString)
 				"chunk name may not contain null characters");
 			RETURN_FALSE;
 		}
+	}
+
+	// Check to see if the code is binary (with precompiled data mark) if this 
+	// was called as loadBinary(), and plain code (without mark) if this was
+	// called as loadString()
+	have_mark = (php_memnstr(code, LUA_SIGNATURE, 
+		sizeof(LUA_SIGNATURE) - 1, code + codeLength) != NULL);
+	if (binary && !have_mark) {
+		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+			"the string does not appear to be a valid binary chunk");
+		RETURN_FALSE;
+	} else if (!binary && have_mark) {
+		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+			"cannot load code with a Lua binary chunk marker escape sequence in it");
+		RETURN_FALSE;
 	}
 
 	// Get the chunks table
@@ -489,7 +592,21 @@ PHP_METHOD(LuaSandbox, loadString)
 	// Balance the stack
 	lua_pop(L, 1);
 }
+/* }}} */
 
+/** {{{ proto LuaSandboxFunction LuaSandbox::loadString(string code, string chunkName) */
+PHP_METHOD(LuaSandbox, loadString)
+{
+	luasandbox_load_helper(0, INTERNAL_FUNCTION_PARAM_PASSTHRU);
+}
+
+/* }}} */
+
+/** {{{ proto LuaSandboxFunction LuaSandbox::loadBinary(string bin, string chunkName) */
+PHP_METHOD(LuaSandbox, loadBinary)
+{
+	luasandbox_load_helper(1, INTERNAL_FUNCTION_PARAM_PASSTHRU);
+}
 /* }}} */
 
 /** {{{ luasandbox_handle_error
@@ -633,27 +750,50 @@ PHP_METHOD(LuaSandbox, callFunction)
 }
 /* }}} */
 
-/*** {{{ proto array LuaSandboxFunction::call(...)
+/** {{{ luasandbox_function_init
+ * Common initialisation for LuaSandboxFunction methods. Initialise the
+ * function, state and sandbox pointers, and push the function to the stack.
+ */
+static int luasandbox_function_init(zval * this_ptr, php_luasandboxfunction_obj ** pfunc, 
+	lua_State ** pstate, php_luasandbox_obj ** psandbox TSRMLS_DC)
+{
+	*pfunc = (php_luasandboxfunction_obj *)
+		zend_object_store_get_object(this_ptr TSRMLS_CC);
+	if (!*pfunc || !(*pfunc)->sandbox || !(*pfunc)->index) {
+		return 0;
+	}
+
+	*psandbox = (php_luasandbox_obj*)
+		zend_object_store_get_object((*pfunc)->sandbox TSRMLS_CC);
+	*pstate = (*psandbox)->state;
+
+	// Find the function
+	lua_getfield(*pstate, LUA_REGISTRYINDEX, "php_luasandbox_chunks");
+	lua_rawgeti(*pstate, -1, (*pfunc)->index);
+
+	// Remove the table from the stack
+	lua_remove(*pstate, -2);
+
+	return 1;
+}
+/* }}} */
+
+/** {{{ proto array LuaSandboxFunction::call(...)
  */
 PHP_METHOD(LuaSandboxFunction, call)
 {
 	zend_uint numArgs = 0;
 	zval *** args = NULL;
 	
-	php_luasandboxfunction_obj * func = (php_luasandboxfunction_obj *)
-		zend_object_store_get_object(getThis() TSRMLS_CC);
+	php_luasandboxfunction_obj * func;
 	lua_State * L;
 	php_luasandbox_obj * sandbox;
 
-	if (!func || !func->sandbox || !func->index) {
+	if (!luasandbox_function_init(getThis(), &func, &L, &sandbox TSRMLS_CC)) {
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, 
 			"attempt to call uninitialized LuaSandboxFunction object" );
 		RETURN_FALSE;
 	}
-
-	sandbox = (php_luasandbox_obj*)
-		zend_object_store_get_object(func->sandbox TSRMLS_CC);
-	L = sandbox->state;
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "*",
 		&args, &numArgs) == FAILURE)
@@ -661,11 +801,7 @@ PHP_METHOD(LuaSandboxFunction, call)
 		RETURN_FALSE;
 	}
 
-	// Find the function
-	lua_getfield(L, LUA_REGISTRYINDEX, "php_luasandbox_chunks");
-	lua_rawgeti(L, -1, func->index);
-
-	// Call it
+	// Call the function
 	luasandbox_call_helper(L, sandbox, args, numArgs, return_value TSRMLS_CC);
 
 	// Delete varargs
@@ -983,7 +1119,7 @@ static zval * luasandbox_lua_to_zval(lua_State * L, int index, HashTable * recur
 
 			// Add the current table to the recursion guard hashtable
 			// Use the pointer as the key, zero-length data
-			zend_hash_update(recursionGuard, (char*)&ptr, sizeof(void*), &data, 0, NULL);
+			zend_hash_update(recursionGuard, (char*)&ptr, sizeof(void*), "", 1, NULL);
 
 			// Process the array
 			array_init(z);
@@ -1180,6 +1316,71 @@ static int luasandbox_call_php(lua_State * L)
 }
 /* }}} */
 
+/** {{{ string LuaSandboxFunction::dump() */
+PHP_METHOD(LuaSandboxFunction, dump)
+{
+	php_luasandboxfunction_obj * func;
+	lua_State * L;
+	php_luasandbox_obj * sandbox;
+	smart_str buf = {0};
+
+	if (!luasandbox_function_init(getThis(), &func, &L, &sandbox TSRMLS_CC)) {
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, 
+			"attempt to call uninitialized LuaSandboxFunction object" );
+		RETURN_FALSE;
+	}
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "") == FAILURE) {
+		return;
+	}
+	
+	lua_dump(L, luasandbox_dump_writer, (void*)&buf);
+	smart_str_0(&buf);
+	if (buf.len) {
+		RETURN_STRINGL(buf.c, buf.len, 0);
+	} else {
+		smart_str_free(&buf);
+		RETURN_EMPTY_STRING();
+	}
+}
+/* }}} */
+
+/** {{{ luasandbox_dump_writer */
+static int luasandbox_dump_writer(lua_State * L, const void * p, size_t sz, void * ud)
+{
+	smart_str * buf = (smart_str *)ud;
+	smart_str_appendl(buf, p, sz);
+	return 0;
+}
+/* }}} */
+
+/** {{{ luasandbox_base_tostring
+ * This is identical to luaB_tostring except that it does not call lua_topointer().
+ */
+static int luasandbox_base_tostring(lua_State * L)
+{
+	luaL_checkany(L, 1);
+	if (luaL_callmeta(L, 1, "__tostring"))  /* is there a metafield? */
+		return 1;  /* use its value */
+	switch (lua_type(L, 1)) {
+		case LUA_TNUMBER:
+			lua_pushstring(L, lua_tostring(L, 1));
+			break;
+		case LUA_TSTRING:
+			lua_pushvalue(L, 1);
+			break;
+		case LUA_TBOOLEAN:
+			lua_pushstring(L, (lua_toboolean(L, 1) ? "true" : "false"));
+			break;
+		case LUA_TNIL:
+			lua_pushliteral(L, "nil");
+			break;
+		default:
+			lua_pushfstring(L, "%s", luaL_typename(L, 1));
+			break;
+	}
+	return 1;
+}
 /* }}} */
 /*
  * Local variables:
