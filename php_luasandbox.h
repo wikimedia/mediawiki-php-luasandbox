@@ -29,6 +29,7 @@ PHP_MINFO_FUNCTION(luasandbox);
 PHP_METHOD(LuaSandbox, loadString);
 PHP_METHOD(LuaSandbox, loadBinary);
 PHP_METHOD(LuaSandbox, setMemoryLimit);
+PHP_METHOD(LuaSandbox, getMemoryUsage);
 PHP_METHOD(LuaSandbox, setCPULimit);
 PHP_METHOD(LuaSandbox, callFunction);
 PHP_METHOD(LuaSandbox, registerLibrary);
@@ -53,6 +54,8 @@ struct _php_luasandbox_obj {
 	lua_State * state;
 	size_t memory_limit;
 	size_t memory_usage;
+	lua_Alloc old_alloc;
+	void * old_alloc_ud;
 	int in_php;
 	volatile int timed_out;
 	volatile int emergency_timed_out;

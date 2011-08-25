@@ -73,7 +73,7 @@ static void luasandbox_timer_handle(int signo, siginfo_t * info, void * context)
 	} else {
 		// Set a hook which will terminate the script execution in a graceful way
 		lua_sethook(data->sandbox->state, luasandbox_timer_timeout_hook,
-			LUA_MASKCALL | LUA_MASKRET | LUA_MASKLINE, 0);
+			LUA_MASKCALL | LUA_MASKRET | LUA_MASKLINE, 1);
 	}
 }
 

@@ -19,6 +19,10 @@
 #include "luasandbox_timer.h"
 #include "ext/standard/php_smart_str.h"
 
+#if defined(LUA_JITLIBNAME) && (SSIZE_MAX >> 32) > 0
+#define LUASANDBOX_LJ_64
+#endif
+
 static zend_object_value luasandbox_new(zend_class_entry *ce TSRMLS_DC);
 static lua_State * luasandbox_newstate(php_luasandbox_obj * intern);
 static void luasandbox_free_storage(void *object TSRMLS_DC);
@@ -26,7 +30,10 @@ static zend_object_value luasandboxfunction_new(zend_class_entry *ce TSRMLS_CC);
 static void luasandboxfunction_free_storage(void *object TSRMLS_DC);
 static void luasandboxfunction_destroy(void *object, zend_object_handle handle TSRMLS_DC);
 static int luasandbox_free_zval_userdata(lua_State * L);
-static void *luasandbox_alloc(void *ud, void *ptr, size_t osize, size_t nsize);
+static inline int luasandbox_update_memory_accounting(php_luasandbox_obj* obj, 
+	size_t osize, size_t nsize);
+static void *luasandbox_php_alloc(void *ud, void *ptr, size_t osize, size_t nsize);
+static void *luasandbox_passthru_alloc(void *ud, void *ptr, size_t osize, size_t nsize);
 static int luasandbox_panic(lua_State * L);
 static lua_State * luasandbox_state_from_zval(zval * this_ptr TSRMLS_DC);
 static void luasandbox_load_helper(int binary, INTERNAL_FUNCTION_PARAMETERS);
@@ -120,6 +127,9 @@ ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_setMemoryLimit, 0)
 	ZEND_ARG_INFO(0, limit)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_getMemoryUsage, 0)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_setCPULimit, 0)
 	ZEND_ARG_INFO(0, normal_limit)
 	ZEND_ARG_INFO(0, emergency_limit)
@@ -153,6 +163,7 @@ const zend_function_entry luasandbox_methods[] = {
 	PHP_ME(LuaSandbox, loadString, arginfo_luasandbox_loadString, 0)
 	PHP_ME(LuaSandbox, loadBinary, arginfo_luasandbox_loadBinary, 0)
 	PHP_ME(LuaSandbox, setMemoryLimit, arginfo_luasandbox_setMemoryLimit, 0)
+	PHP_ME(LuaSandbox, getMemoryUsage, arginfo_luasandbox_getMemoryUsage, 0)
 	PHP_ME(LuaSandbox, setCPULimit, arginfo_luasandbox_setCPULimit, 0)
 	PHP_ME(LuaSandbox, callFunction, arginfo_luasandbox_callFunction, 0)
 	PHP_ME(LuaSandbox, registerLibrary, arginfo_luasandbox_registerLibrary, 0)
@@ -319,7 +330,8 @@ static zend_object_value luasandbox_new(zend_class_entry *ce TSRMLS_DC)
 	intern = emalloc(sizeof(php_luasandbox_obj));
 	memset(intern, 0, sizeof(php_luasandbox_obj));
 	zend_object_std_init(&intern->std, ce TSRMLS_CC);
-	
+	intern->memory_limit = (size_t)-1;
+
 	// Initialise the Lua state
 	intern->state = luasandbox_newstate(intern);
 
@@ -343,14 +355,30 @@ static lua_State * luasandbox_newstate(php_luasandbox_obj * intern)
 {
 	lua_State * L;
 
-	L = lua_newstate(luasandbox_alloc, intern);
+#ifdef LUASANDBOX_LJ_64
+	// The 64-bit version of LuaJIT needs to use its own allocator
+	L = luaL_newstate();
+	if (L == NULL) {
+		php_error_docref(NULL TSRMLS_CC, E_ERROR,
+			"Attempt to allocate a new Lua state failed");
+	}
+	intern->old_alloc = lua_getallocf(L, &intern->old_alloc_ud);
+	lua_setallocf(L, luasandbox_passthru_alloc, intern);
+#else
+	L = lua_newstate(luasandbox_php_alloc, intern);
+#endif
+
 	lua_atpanic(L, luasandbox_panic);
 
 	// Load some relatively safe standard libraries
-	luaopen_base(L);
-	luaopen_string(L);
-	luaopen_table(L);
-	luaopen_math(L);
+	lua_pushcfunction(L, luaopen_base);
+	lua_call(L, 0, 0);
+	lua_pushcfunction(L, luaopen_string);
+	lua_call(L, 0, 0);
+	lua_pushcfunction(L, luaopen_table);
+	lua_call(L, 0, 0);
+	lua_pushcfunction(L, luaopen_math);
+	lua_call(L, 0, 0);
 
 	// Remove any globals that aren't in a whitelist. This is mostly to remove 
 	// unsafe functions from the base library.
@@ -408,6 +436,15 @@ static lua_State * luasandbox_newstate(php_luasandbox_obj * intern)
 static void luasandbox_free_storage(void *object TSRMLS_DC)
 {
 	php_luasandbox_obj * intern = (php_luasandbox_obj*)object;
+
+	// In 64-bit LuaJIT mode, restore the old allocator before calling 
+	// lua_close() because lua_close() actually checks that the value of the 
+	// function pointer is unchanged before destroying the underlying 
+	// allocator. If the allocator has been changed, the mmap is not freed.
+#ifdef LUASANDBOX_LJ_64
+	lua_setallocf(intern->state, intern->old_alloc, intern->old_alloc_ud);
+#endif
+
 	lua_close(intern->state);
 	intern->state = NULL;
 	zend_object_std_dtor(&intern->std);
@@ -501,27 +538,21 @@ static int luasandbox_free_zval_userdata(lua_State * L)
 }
 /* }}} */
 
-/** {{{ luasandbox_alloc
+/** {{{ luasandbox_php_alloc
  *
  * The Lua allocator function. Use PHP's request-local allocator as a backend.
  * Account for memory usage and deny the allocation request if the amount 
  * allocated is above the user-specified limit.
  */
-static void *luasandbox_alloc(void *ud, void *ptr, size_t osize, size_t nsize) 
+static void *luasandbox_php_alloc(void *ud, void *ptr, size_t osize, size_t nsize) 
 {
 	php_luasandbox_obj * obj = (php_luasandbox_obj*)ud;
 	void * nptr;
 	obj->in_php = 1;
-
-	// Update memory usage accounting
-	if (obj->memory_usage + nsize < obj->memory_usage) {
-		// Overflow
-		// No PHP error because it's plausible that untrusted scripts could do this.
+	if (!luasandbox_update_memory_accounting(obj, osize, nsize)) {
 		obj->in_php = 0;
 		return NULL;
 	}
-
-	obj->memory_usage += nsize - osize;
 
 	if (nsize == 0) {
 		if (ptr) {
@@ -535,6 +566,48 @@ static void *luasandbox_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
 	}
 	obj->in_php = 0;
 	return nptr;
+}
+/* }}} */
+
+/** {{{ luasandbox_passthru_alloc
+ *
+ * A Lua allocator function for use with LuaJIT on a 64-bit platform. Pass 
+ * allocation requests through to the standard allocator, which is customised
+ * on this platform to always return memory from the lower 2GB of address 
+ * space.
+ */
+static void *luasandbox_passthru_alloc(void *ud, void *ptr, size_t osize, size_t nsize) 
+{
+	php_luasandbox_obj * obj = (php_luasandbox_obj*)ud;
+	if (!luasandbox_update_memory_accounting(obj, osize, nsize)) {
+		return NULL;
+	}
+	return obj->old_alloc(obj->old_alloc_ud, ptr, osize, nsize);
+}
+/* }}} */
+
+/** {{{ luasandbox_update_memory_accounting
+ *
+ * Update memory usage statistics for the given memory allocation request.
+ * Returns 1 if the allocation should be allowed, 0 if it should fail.
+ */
+static inline int luasandbox_update_memory_accounting(php_luasandbox_obj* obj, 
+	size_t osize, size_t nsize) 
+{
+	if (nsize > obj->memory_limit
+		|| obj->memory_usage > obj->memory_limit - nsize)
+	{
+		// Memory limit exceeded
+		return 0;
+	}
+
+	if (osize > nsize && obj->memory_usage + nsize < osize) {
+		// Negative memory usage -- do not update
+		return 1;
+	}
+
+	obj->memory_usage += nsize - osize;
+	return 1;
 }
 /* }}} */
 
@@ -816,6 +889,20 @@ static void luasandbox_set_timespec(struct timespec * dest, double source)
 	}
 }
 
+/* }}} */
+
+/** {{{ LuaSandbox::getMemoryUsage */
+PHP_METHOD(LuaSandbox, getMemoryUsage)
+{
+	php_luasandbox_obj * sandbox = (php_luasandbox_obj*)
+		zend_object_store_get_object(getThis() TSRMLS_CC);
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "") == FAILURE) {
+		RETURN_FALSE;
+	}
+
+	RETURN_LONG(sandbox->memory_usage);
+}
 /* }}} */
 
 /** {{{ proto array LuaSandbox::callFunction(string name, ...)
