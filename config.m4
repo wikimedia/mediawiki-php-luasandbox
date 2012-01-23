@@ -24,6 +24,8 @@ if test "$PHP_LUASANDBOX" != "no"; then
 	dnl Output results for debugging purposes:
 	AC_MSG_NOTICE(LUA: found LUA_CFLAGS: $LUA_CFLAGS)
 	AC_MSG_NOTICE(LUA: found LUA_LIBS: $LUA_LIBS)
+	
+	PHP_EVAL_LIBLINE("-lrt", LUASANDBOX_SHARED_LIBADD)
 
 	PHP_SUBST(LUASANDBOX_SHARED_LIBADD)
 	PHP_NEW_EXTENSION(luasandbox, luasandbox.c timer.c, $ext_shared)
