@@ -669,6 +669,19 @@ static void luasandbox_load_helper(int binary, INTERNAL_FUNCTION_PARAMETERS)
 		zend_object_store_get_object(this_ptr TSRMLS_CC);
 	L = sandbox->state;
 
+	// The following code puts zval of the sandbox object into the register.
+	// Why here? It should have been done at the constructor, but there was
+	// no getThis() available at that point. Let's hope user will not run any
+	// code requiring this register until he actually loads the code.
+	// Why put it? Because when creating function object we need a zval,
+	// not just php_luasandbox_obj, since we are going to reference to it from 
+	// the function object, and such referencing is possible only through zvalues.
+	// Let us hope putting zval into Lua register won't corrupt any PHP internal
+	// mechanisms.
+	// FIXME: there should be a better way of doing this.
+	lua_pushlightuserdata(L, (void*)getThis());
+	lua_setfield(L, LUA_REGISTRYINDEX, "php_luasandbox_obj_zval");
+
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s|s", 
 				&code, &codeLength, &chunkName, &chunkNameLength) == FAILURE) {
 		RETURN_FALSE;
@@ -1357,7 +1370,45 @@ static zval * luasandbox_lua_to_zval(lua_State * L, int index, HashTable * recur
 			}
 			break;
 		}
-		case LUA_TFUNCTION:
+		case LUA_TFUNCTION: {
+			int func_index;
+			php_luasandboxfunction_obj * func_obj;
+			php_luasandbox_obj * sandbox;
+			zval * sandbox_zval;
+			
+			// Get the sandbox object and its zval
+			sandbox = luasandbox_get_php_obj(L);
+			lua_getfield(L, LUA_REGISTRYINDEX, "php_luasandbox_obj_zval");
+			sandbox_zval = (zval*)lua_touserdata(L, -1);
+			assert(sandbox_zval != NULL);
+			lua_pop(L, 1);
+			
+			// Get the chunks table
+			lua_getfield(L, LUA_REGISTRYINDEX, "php_luasandbox_chunks");
+
+			// Get the next free index
+			func_index = ++(sandbox->function_index);
+			if (func_index >= INT_MAX) {
+				php_error_docref(NULL TSRMLS_CC, E_WARNING,
+						"too many chunks loaded already");
+				ZVAL_NULL(z);
+			}
+
+			// Put the function together with other chunks
+			lua_pushvalue(L, index);
+			lua_rawseti(L, -2, (int)func_index);
+
+			// Create a LuaSandboxFunction object to hold a reference to the function
+			object_init_ex(z, luasandboxfunction_ce);
+			func_obj = (php_luasandboxfunction_obj*)zend_object_store_get_object(z);
+			func_obj->index = func_index;
+			func_obj->sandbox = sandbox_zval;
+			Z_ADDREF_P(func_obj->sandbox);
+
+			// Balance the stack
+			lua_pop(L, 1);
+			break;
+		}
 		case LUA_TUSERDATA:
 		case LUA_TTHREAD:
 		case LUA_TLIGHTUSERDATA:
