@@ -1201,11 +1201,26 @@ static int luasandbox_push_zval(lua_State * L, zval * z)
 				return 0;
 			}
 			break;
-		case IS_OBJECT:
+		case IS_OBJECT: {
+			zend_class_entry * objce;
+			
+			objce = Z_OBJCE_P(z);
+			if (instanceof_function(objce, luasandboxfunction_ce TSRMLS_CC)) {
+				php_luasandboxfunction_obj * func_obj;
+				
+				func_obj = (php_luasandboxfunction_obj *)zend_object_store_get_object(z TSRMLS_CC);
+				
+				lua_getfield(L, LUA_REGISTRYINDEX, "php_luasandbox_chunks");
+				lua_rawgeti(L, -1, func_obj->index);
+				lua_remove(L, -2);
+				break;
+			}
+		
 			if (!luasandbox_push_hashtable(L, Z_OBJPROP_P(z))) {
 				return 0;
 			}
 			break;
+		}
 		case IS_STRING:
 			lua_pushlstring(L, Z_STRVAL_P(z), Z_STRLEN_P(z));
 			break;
@@ -1395,7 +1410,7 @@ static zval * luasandbox_lua_to_zval(lua_State * L, int index, HashTable * recur
 			}
 
 			// Put the function together with other chunks
-			lua_pushvalue(L, index);
+			lua_pushvalue(L, index - 1);
 			lua_rawseti(L, -2, (int)func_index);
 
 			// Create a LuaSandboxFunction object to hold a reference to the function
