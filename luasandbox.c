@@ -1006,7 +1006,7 @@ static int luasandbox_function_init(zval * this_ptr, php_luasandboxfunction_obj 
  * resource type being used as an argument. Lua errors will result in a 
  * LuaSandboxError exception being thrown.
  *
- * Lua functions inherently return an list of results. So on success, this 
+ * Lua functions inherently return a list of results. So on success, this 
  * function returns an array containing all of the values returned by Lua, 
  * with integer keys starting from zero. Lua may return no results, in which 
  * case an empty array is returned.
