@@ -783,7 +783,9 @@ static void luasandbox_handle_error(lua_State * L, int status)
 {
 	const char * errorMsg = lua_tostring(L, -1);
 	lua_pop(L, 1);
-	zend_throw_exception(luasandboxerror_ce, (char*)errorMsg, status);
+	if (!EG(exception)) {
+		zend_throw_exception(luasandboxerror_ce, (char*)errorMsg, status);
+	}
 }
 /* }}} */
 
@@ -1613,17 +1615,22 @@ static int luasandbox_call_php(lua_State * L)
 		// Push the return value back to Lua
 		luasandbox_push_zval(L, *fci.retval_ptr_ptr);
 		num_results = 1;
+		zval_ptr_dtor(&retval_ptr);
 	}
 
-	// Free the zvals
+	// Free the argument zvals
 	for (i = 0; i < top; i++) {
 		zval_ptr_dtor(&(pointers[i]));
 	}
-	zval_ptr_dtor(&retval_ptr);
 
 	// Free the pointer arrays
 	efree(temp);
 	luasandbox_leave_php(L, intern);
+
+	// If an exception occurred, convert it to a Lua error (just to unwind the stack)
+	if (EG(exception)) {
+		luaL_error(L, "[exception]");
+	}
 	return num_results;
 }
 /* }}} */
