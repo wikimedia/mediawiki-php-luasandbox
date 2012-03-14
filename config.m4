@@ -1,6 +1,8 @@
 dnl $Id$
 dnl config.m4 for extension luasandbox
 
+AC_PREREQ(2.50)
+
 PHP_ARG_WITH(luasandbox, for luasandbox support,
 [  --with-luasandbox             Include luasandbox support])
 
@@ -20,10 +22,6 @@ if test "$PHP_LUASANDBOX" != "no"; then
 	dnl LUA_LIBS and LUA_CFLAGS interprets them:
 	PHP_EVAL_INCLINE($LUA_CFLAGS)
 	PHP_EVAL_LIBLINE($LUA_LIBS, LUASANDBOX_SHARED_LIBADD)
-
-	dnl Output results for debugging purposes:
-	AC_MSG_NOTICE(LUA: found LUA_CFLAGS: $LUA_CFLAGS)
-	AC_MSG_NOTICE(LUA: found LUA_LIBS: $LUA_LIBS)
 	
 	PHP_EVAL_LIBLINE("-lrt", LUASANDBOX_SHARED_LIBADD)
 
