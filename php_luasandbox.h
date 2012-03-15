@@ -34,6 +34,7 @@ PHP_METHOD(LuaSandbox, setCPULimit);
 PHP_METHOD(LuaSandbox, callFunction);
 PHP_METHOD(LuaSandbox, registerLibrary);
 
+PHP_METHOD(LuaSandboxFunction, __construct);
 PHP_METHOD(LuaSandboxFunction, call);
 PHP_METHOD(LuaSandboxFunction, dump);
 
@@ -57,6 +58,8 @@ struct _php_luasandbox_obj {
 	lua_Alloc old_alloc;
 	void * old_alloc_ud;
 	int in_php;
+	int in_lua;
+	zval * current_zval; /* The zval for the LuaSandbox which is currently executing Lua code */
 	volatile int timed_out;
 	volatile int emergency_timed_out;
 	int is_cpu_limited;
