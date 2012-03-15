@@ -10,6 +10,7 @@
 #include <float.h>
 #include <signal.h>
 #include <time.h>
+#include <stdlib.h>
 
 #include "php.h"
 #include "php_ini.h"
@@ -64,6 +65,8 @@ static int luasandbox_push_hashtable(lua_State * L, HashTable * ht);
 static int luasandbox_call_php(lua_State * L);
 static int luasandbox_dump_writer(lua_State * L, const void * p, size_t sz, void * ud);
 static int luasandbox_base_tostring(lua_State * L);
+static int luasandbox_math_random(lua_State * L);
+static int luasandbox_math_randomseed(lua_State * L);
 
 char luasandbox_timeout_message[] = "The maximum execution time for this script was exceeded";
 
@@ -424,6 +427,15 @@ static lua_State * luasandbox_newstate(php_luasandbox_obj * intern)
 	lua_pushnil(L);
 	lua_setfield(L, -2, "dump");
 	lua_pop(L, 1);
+
+	// Install our own versions of math.random and math.randomseed
+	lua_getglobal(L, "math");
+	lua_pushcfunction(L, luasandbox_math_random);
+	lua_setfield(L, -2, "random");
+	lua_pushcfunction(L, luasandbox_math_randomseed);
+	lua_setfield(L, -2, "randomseed");
+	lua_pop(L, 1);
+	
 
 	// Create a table for storing chunks
 	lua_newtable(L);
@@ -1734,6 +1746,54 @@ static int luasandbox_base_tostring(lua_State * L)
 			break;
 	}
 	return 1;
+}
+/* }}} */
+
+/** {{{ luasandbox_math_random
+ *
+ * A math.random implementation that doesn't share state with PHP's rand()
+ */
+static int luasandbox_math_random(lua_State * L)
+{
+	php_luasandbox_obj * sandbox = luasandbox_get_php_obj(L);
+
+	int i = rand_r(&sandbox->random_seed);
+	if (i >= RAND_MAX) {
+		i -= RAND_MAX;
+	}
+	lua_Number r = (lua_Number)i / (lua_Number)RAND_MAX;
+	switch (lua_gettop(L)) {  /* check number of arguments */
+		case 0: {  /* no arguments */
+			lua_pushnumber(L, r);  /* Number between 0 and 1 */
+			break;
+		}
+		case 1: {  /* only upper limit */
+			int u = luaL_checkint(L, 1);
+			luaL_argcheck(L, 1<=u, 1, "interval is empty");
+			lua_pushnumber(L, floor(r*u)+1);  /* int between 1 and `u' */
+			break;
+		}
+		case 2: {  /* lower and upper limits */
+			int l = luaL_checkint(L, 1);
+			int u = luaL_checkint(L, 2);
+			luaL_argcheck(L, l<=u, 2, "interval is empty");
+			lua_pushnumber(L, floor(r*(u-l+1))+l);  /* int between `l' and `u' */
+			break;
+		}
+		default: return luaL_error(L, "wrong number of arguments");
+	}
+	return 1;
+}
+/* }}} */
+
+/** {{{ luasandbox_math_randomseed
+ *
+ * Set the seed for the custom math.random.
+ */
+static int luasandbox_math_randomseed(lua_State * L)
+{
+	php_luasandbox_obj * sandbox = luasandbox_get_php_obj(L);
+	sandbox->random_seed = (unsigned int)luaL_checkint(L, 1);
 }
 /* }}} */
 /*

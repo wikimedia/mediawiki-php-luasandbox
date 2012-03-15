@@ -66,6 +66,7 @@ struct _php_luasandbox_obj {
 	struct timespec cpu_normal_limit;
 	struct timespec cpu_emergency_limit;
 	int function_index;
+	unsigned int random_seed;
 };
 typedef struct _php_luasandbox_obj php_luasandbox_obj;
 
