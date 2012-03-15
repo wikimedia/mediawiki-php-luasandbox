@@ -4,11 +4,7 @@
 
 #include <lua.h>
 #include <lauxlib.h>
-#include <lualib.h>
 #include <math.h>
-#include <limits.h>
-#include <float.h>
-#include <signal.h>
 #include <time.h>
 #include <stdlib.h>
 
@@ -19,10 +15,6 @@
 #include "php_luasandbox.h"
 #include "luasandbox_timer.h"
 #include "ext/standard/php_smart_str.h"
-
-#if defined(LUA_JITLIBNAME) && (SSIZE_MAX >> 32) > 0
-#define LUASANDBOX_LJ_64
-#endif
 
 #define CHECK_VALID_STATE(state) \
 	if (!state) { \
@@ -36,11 +28,6 @@ static void luasandbox_free_storage(void *object TSRMLS_DC);
 static zend_object_value luasandboxfunction_new(zend_class_entry *ce TSRMLS_CC);
 static void luasandboxfunction_free_storage(void *object TSRMLS_DC);
 static void luasandboxfunction_destroy(void *object, zend_object_handle handle TSRMLS_DC);
-static int luasandbox_free_zval_userdata(lua_State * L);
-static inline int luasandbox_update_memory_accounting(php_luasandbox_obj* obj, 
-	size_t osize, size_t nsize);
-static void *luasandbox_php_alloc(void *ud, void *ptr, size_t osize, size_t nsize);
-static void *luasandbox_passthru_alloc(void *ud, void *ptr, size_t osize, size_t nsize);
 static int luasandbox_panic(lua_State * L);
 static lua_State * luasandbox_state_from_zval(zval * this_ptr TSRMLS_DC);
 static void luasandbox_load_helper(int binary, INTERNAL_FUNCTION_PARAMETERS);
@@ -52,69 +39,12 @@ static int luasandbox_function_init(zval * this_ptr, php_luasandboxfunction_obj 
 static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, 
 	php_luasandbox_obj * sandbox,
 	zval *** args, zend_uint numArgs, zval * return_value TSRMLS_DC);
-static int luasandbox_push_zval(lua_State * L, zval * z);
-static void luasandbox_push_zval_userdata(lua_State * L, zval * z);
-static void luasandbox_lua_to_zval(zval * z, lua_State * L, int index, 
-	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC);
-static void luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
-	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC);
-static php_luasandbox_obj * luasandbox_get_php_obj(lua_State * L);
 static void luasandbox_handle_error(lua_State * L, int status);
 static void luasandbox_handle_emergency_timeout(php_luasandbox_obj * sandbox);
-static int luasandbox_push_hashtable(lua_State * L, HashTable * ht);
 static int luasandbox_call_php(lua_State * L);
 static int luasandbox_dump_writer(lua_State * L, const void * p, size_t sz, void * ud);
-static int luasandbox_base_tostring(lua_State * L);
-static int luasandbox_math_random(lua_State * L);
-static int luasandbox_math_randomseed(lua_State * L);
 
 char luasandbox_timeout_message[] = "The maximum execution time for this script was exceeded";
-
-/**
- * Allowed global variables. Omissions are:
- *   * pcall, xpcall: Changing the protected environment won't work with our
- *     current timeout method.
- *   * loadfile: insecure.
- *   * load, loadstring: Probably creates a protected environment so has 
- *     the same problem as pcall. Also omitting these makes analysis of the 
- *     code for runtime etc. feasible.
- *   * print: Not compatible with a sandbox environment
- *   * tostring: Provides addresses of tables and functions, which provides an 
- *     easy ASLR workaround or heap address discovery mechanism for a memory 
- *     corruption exploit.
- *   * Any new or undocumented functions like newproxy.
- *   * package: cpath, loadlib etc. are insecure.
- *   * coroutine: Not useful for our application so unreviewed at present.
- *   * io, file, os: insecure
- *   * debug: Provides various ways to break the sandbox, such as setupvalue()
- *     and getregistry().
- */
-char * luasandbox_allowed_globals[] = {
-	// base
-	"assert",
-	"error",
-	"getmetatable",
-	"getfenv",
-	"getmetatable",
-	"ipairs",
-	"next",
-	"pairs",
-	"rawequal",
-	"rawget",
-	"rawset",
-	"select",
-	"setmetatable",
-	"tonumber",
-	"type",
-	"unpack",
-	"_G",
-	"_VERSION",
-	// libs
-	"string",
-	"table",
-	"math"
-};
-#define LUASANDBOX_NUM_ALLOWED_GLOBALS (sizeof(luasandbox_allowed_globals) / sizeof(char*))
 
 zend_class_entry *luasandbox_ce;
 zend_class_entry *luasandboxerror_ce;
@@ -227,7 +157,6 @@ ZEND_GET_MODULE(luasandbox)
  */
 PHP_MINIT_FUNCTION(luasandbox)
 {
-	int i;
 	/* If you have INI entries, uncomment these lines 
 	REGISTER_INI_ENTRIES();
 	*/
@@ -261,14 +190,7 @@ PHP_MINIT_FUNCTION(luasandbox)
 	luasandboxfunction_ce = zend_register_internal_class(&ce TSRMLS_CC);
 	luasandboxfunction_ce->create_object = luasandboxfunction_new;
 	
-	// Initialise LUASANDBOX_G(allowed_globals)
-	LUASANDBOX_G(allowed_globals) = pemalloc(sizeof(HashTable), 1);
-	zend_hash_init(LUASANDBOX_G(allowed_globals), LUASANDBOX_NUM_ALLOWED_GLOBALS, NULL, NULL, 1);
-	for (i = 0; i < LUASANDBOX_NUM_ALLOWED_GLOBALS; i++) {
-		zend_hash_update(LUASANDBOX_G(allowed_globals), 
-			luasandbox_allowed_globals[i], strlen(luasandbox_allowed_globals[i]) + 1,
-			"", 1, NULL);
-	}
+	LUASANDBOX_G(allowed_globals) = NULL;
 	return SUCCESS;
 }
 /* }}} */
@@ -277,8 +199,7 @@ PHP_MINIT_FUNCTION(luasandbox)
  */
 PHP_MSHUTDOWN_FUNCTION(luasandbox)
 {
-	zend_hash_destroy(LUASANDBOX_G(allowed_globals));
-	pefree(LUASANDBOX_G(allowed_globals), 1);
+	luasandbox_lib_shutdown(TSRMLS_C);
 	return SUCCESS;
 }
 /* }}} */
@@ -303,37 +224,6 @@ PHP_MINFO_FUNCTION(luasandbox)
 }
 /* }}} */
 
-/** {{{ luasandbox_enter_php
- *
- * This function must be called each time a C function is entered from Lua
- * and the PHP state needs to be accessed in any way. Before exiting the 
- * function, luasandbox_leave_php() must be called.
- *
- * This sets a flag which indicates to the timeout signal handler that it is 
- * unsafe to call longjmp() to return control to PHP. If the flag is not 
- * correctly set, memory may be corrupted and security compromised.
- */
-static inline void luasandbox_enter_php(lua_State * L, php_luasandbox_obj * intern)
-{
-	intern->in_php ++;
-	if (intern->timed_out) {
-		intern->in_php --;
-		luaL_error(L, luasandbox_timeout_message);
-	}
-}
-/* }}} */
-
-/** {{{ luasandbox_leave_php
- *
- * This function must be called after luasandbox_enter_php, before the callback 
- * from Lua returns.
- */
-static inline void luasandbox_leave_php(lua_State * L, php_luasandbox_obj * intern)
-{
-	intern->in_php --;
-}
-/* }}} */
-
 /** {{{ luasandbox_new
  *
  * "new" handler for the LuaSandbox class
@@ -347,7 +237,7 @@ static zend_object_value luasandbox_new(zend_class_entry *ce TSRMLS_DC)
 	intern = emalloc(sizeof(php_luasandbox_obj));
 	memset(intern, 0, sizeof(php_luasandbox_obj));
 	zend_object_std_init(&intern->std, ce TSRMLS_CC);
-	intern->memory_limit = (size_t)-1;
+	intern->alloc.memory_limit = (size_t)-1;
 
 	// Initialise the Lua state
 	intern->state = luasandbox_newstate(intern);
@@ -370,72 +260,20 @@ static zend_object_value luasandbox_new(zend_class_entry *ce TSRMLS_DC)
  */
 static lua_State * luasandbox_newstate(php_luasandbox_obj * intern) 
 {
-	lua_State * L;
+	lua_State * L = luasandbox_alloc_new_state(&intern->alloc, intern);
 
-#ifdef LUASANDBOX_LJ_64
-	// The 64-bit version of LuaJIT needs to use its own allocator
-	L = luaL_newstate();
 	if (L == NULL) {
 		php_error_docref(NULL TSRMLS_CC, E_ERROR,
 			"Attempt to allocate a new Lua state failed");
 	}
-	intern->old_alloc = lua_getallocf(L, &intern->old_alloc_ud);
-	lua_setallocf(L, luasandbox_passthru_alloc, intern);
-#else
-	L = lua_newstate(luasandbox_php_alloc, intern);
-#endif
 
 	lua_atpanic(L, luasandbox_panic);
-
-	// Load some relatively safe standard libraries
-	lua_pushcfunction(L, luaopen_base);
-	lua_call(L, 0, 0);
-	lua_pushcfunction(L, luaopen_string);
-	lua_call(L, 0, 0);
-	lua_pushcfunction(L, luaopen_table);
-	lua_call(L, 0, 0);
-	lua_pushcfunction(L, luaopen_math);
-	lua_call(L, 0, 0);
-
-	// Remove any globals that aren't in a whitelist. This is mostly to remove 
-	// unsafe functions from the base library.
-	lua_pushnil(L);
-	while (lua_next(L, LUA_GLOBALSINDEX) != 0) {
-		const char * key;
-		size_t key_len;
-		void * data;
-		lua_pop(L, 1);
-		if (lua_type(L, -1) != LUA_TSTRING) {
-			continue;
-		}
-		key = lua_tolstring(L, -1, &key_len);
-		if (zend_hash_find(LUASANDBOX_G(allowed_globals), 
-			(char*)key, key_len + 1, &data) == FAILURE) 
-		{
-			// Not allowed, delete it
-			lua_pushnil(L);
-			lua_setglobal(L, key);
-		}
-	}
-
-	// Install our own version of tostring
-	lua_pushcfunction(L, luasandbox_base_tostring);
-	lua_setglobal(L, "tostring");
-
-	// Remove string.dump: may expose private data
-	lua_getglobal(L, "string");
-	lua_pushnil(L);
-	lua_setfield(L, -2, "dump");
-	lua_pop(L, 1);
-
-	// Install our own versions of math.random and math.randomseed
-	lua_getglobal(L, "math");
-	lua_pushcfunction(L, luasandbox_math_random);
-	lua_setfield(L, -2, "random");
-	lua_pushcfunction(L, luasandbox_math_randomseed);
-	lua_setfield(L, -2, "randomseed");
-	lua_pop(L, 1);
 	
+	// Register the standard library
+	luasandbox_lib_register(L TSRMLS_CC);
+
+	// Set up the data conversion module
+	luasandbox_data_conversion_init(L);
 
 	// Create a table for storing chunks
 	lua_newtable(L);
@@ -444,12 +282,6 @@ static lua_State * luasandbox_newstate(php_luasandbox_obj * intern)
 	// Register a pointer to the PHP object so that C functions can find it
 	lua_pushlightuserdata(L, (void*)intern);
 	lua_setfield(L, LUA_REGISTRYINDEX, "php_luasandbox_obj");
-
-	// Create the metatable for zval destruction
-	lua_createtable(L, 0, 1);
-	lua_pushcfunction(L, luasandbox_free_zval_userdata);
-	lua_setfield(L, -2, "__gc");
-	lua_setfield(L, LUA_REGISTRYINDEX, "php_luasandbox_zval_metatable");
 
 	return L;
 }
@@ -464,15 +296,9 @@ static void luasandbox_free_storage(void *object TSRMLS_DC)
 	php_luasandbox_obj * intern = (php_luasandbox_obj*)object;
 
 	if (intern->state) {
-		// In 64-bit LuaJIT mode, restore the old allocator before calling 
-		// lua_close() because lua_close() actually checks that the value of the 
-		// function pointer is unchanged before destroying the underlying 
-		// allocator. If the allocator has been changed, the mmap is not freed.
-#ifdef LUASANDBOX_LJ_64
-		lua_setallocf(intern->state, intern->old_alloc, intern->old_alloc_ud);
-#endif
-
-		lua_close(intern->state);
+		luasandbox_alloc_delete_state(&intern->alloc, intern->state);
+		intern->state = NULL;
+		
 		intern->state = NULL;
 	}
 	zend_object_std_dtor(&intern->std);
@@ -544,97 +370,6 @@ static void luasandboxfunction_free_storage(void *object TSRMLS_DC)
 	php_luasandboxfunction_obj * func = (php_luasandboxfunction_obj*)object;
 	zend_object_std_dtor(&func->std);
 	efree(object);
-}
-/* }}} */
-
-/** {{{ luasandbox_free_zval_userdata
- *
- * Free a zval given to Lua by luasandbox_push_zval_userdata.
- */
-static int luasandbox_free_zval_userdata(lua_State * L)
-{
-	zval ** zpp = (zval**)lua_touserdata(L, 1);
-	php_luasandbox_obj * intern = luasandbox_get_php_obj(L);
-	luasandbox_enter_php(L, intern);
-	if (zpp && *zpp) {
-		zval_ptr_dtor(zpp);
-	}
-	*zpp = NULL;
-	luasandbox_leave_php(L, intern);
-	return 0;
-}
-/* }}} */
-
-/** {{{ luasandbox_php_alloc
- *
- * The Lua allocator function. Use PHP's request-local allocator as a backend.
- * Account for memory usage and deny the allocation request if the amount 
- * allocated is above the user-specified limit.
- */
-static void *luasandbox_php_alloc(void *ud, void *ptr, size_t osize, size_t nsize) 
-{
-	php_luasandbox_obj * obj = (php_luasandbox_obj*)ud;
-	void * nptr;
-	obj->in_php ++;
-	if (!luasandbox_update_memory_accounting(obj, osize, nsize)) {
-		obj->in_php --;
-		return NULL;
-	}
-
-	if (nsize == 0) {
-		if (ptr) {
-			efree(ptr);
-		}
-		nptr = NULL;
-	} else if (osize == 0) {
-		nptr = emalloc(nsize);
-	} else {
-		nptr = erealloc(ptr, nsize);
-	}
-	obj->in_php --;
-	return nptr;
-}
-/* }}} */
-
-/** {{{ luasandbox_passthru_alloc
- *
- * A Lua allocator function for use with LuaJIT on a 64-bit platform. Pass 
- * allocation requests through to the standard allocator, which is customised
- * on this platform to always return memory from the lower 2GB of address 
- * space.
- */
-static void *luasandbox_passthru_alloc(void *ud, void *ptr, size_t osize, size_t nsize) 
-{
-	php_luasandbox_obj * obj = (php_luasandbox_obj*)ud;
-	if (!luasandbox_update_memory_accounting(obj, osize, nsize)) {
-		return NULL;
-	}
-	return obj->old_alloc(obj->old_alloc_ud, ptr, osize, nsize);
-}
-/* }}} */
-
-/** {{{ luasandbox_update_memory_accounting
- *
- * Update memory usage statistics for the given memory allocation request.
- * Returns 1 if the allocation should be allowed, 0 if it should fail.
- */
-static inline int luasandbox_update_memory_accounting(php_luasandbox_obj* obj, 
-	size_t osize, size_t nsize) 
-{
-	if (nsize > obj->memory_limit
-		|| obj->memory_usage > obj->memory_limit - nsize)
-	{
-		// Memory limit exceeded
-		return 0;
-	}
-
-	if (osize > nsize && obj->memory_usage + nsize < osize) {
-		// Negative memory usage -- do not update
-		return 1;
-	}
-
-	obj->memory_usage += nsize - osize;
-	return 1;
 }
 /* }}} */
 
@@ -828,7 +563,7 @@ PHP_METHOD(LuaSandbox, setMemoryLimit)
 		RETURN_FALSE;
 	}
 
-	intern->memory_limit = limit;
+	intern->alloc.memory_limit = limit;
 }
 /* }}} */
 
@@ -935,7 +670,7 @@ PHP_METHOD(LuaSandbox, getMemoryUsage)
 		RETURN_FALSE;
 	}
 
-	RETURN_LONG(sandbox->memory_usage);
+	RETURN_LONG(sandbox->alloc.memory_usage);
 }
 /* }}} */
 
@@ -1034,6 +769,7 @@ PHP_METHOD(LuaSandboxFunction, __construct)
 {
 	php_error_docref(NULL TSRMLS_CC, E_ERROR, "LuaSandboxFunction cannot be constructed directly");
 }
+/* }}} */
 
 /** {{{ proto array LuaSandboxFunction::call(...)
  *
@@ -1216,299 +952,11 @@ static int luasandbox_find_field(lua_State * L, int index,
 }
 /* }}} */
 
-/** {{{ luasandbox_push_zval
- *
- * Convert a zval to an appropriate Lua type and push the resulting value on to
- * the stack.
- */
-static int luasandbox_push_zval(lua_State * L, zval * z)
-{
-	switch (Z_TYPE_P(z)) {
-		case IS_NULL:
-			lua_pushnil(L);
-			break;
-		case IS_LONG:
-			lua_pushinteger(L, Z_LVAL_P(z));
-			break;
-		case IS_DOUBLE:
-			lua_pushnumber(L, Z_DVAL_P(z));
-			break;
-		case IS_BOOL:
-			lua_pushboolean(L, Z_BVAL_P(z));
-			break;
-		case IS_ARRAY:
-			if (!luasandbox_push_hashtable(L, Z_ARRVAL_P(z))) {
-				return 0;
-			}
-			break;
-		case IS_OBJECT: {
-			zend_class_entry * objce;
-			
-			objce = Z_OBJCE_P(z);
-			if (instanceof_function(objce, luasandboxfunction_ce TSRMLS_CC)) {
-				php_luasandboxfunction_obj * func_obj;
-				
-				func_obj = (php_luasandboxfunction_obj *)zend_object_store_get_object(z TSRMLS_CC);
-				
-				lua_getfield(L, LUA_REGISTRYINDEX, "php_luasandbox_chunks");
-				lua_rawgeti(L, -1, func_obj->index);
-				lua_remove(L, -2);
-				break;
-			}
-		
-			if (!luasandbox_push_hashtable(L, Z_OBJPROP_P(z))) {
-				return 0;
-			}
-			break;
-		}
-		case IS_STRING:
-			lua_pushlstring(L, Z_STRVAL_P(z), Z_STRLEN_P(z));
-			break;
-		case IS_RESOURCE:
-		case IS_CONSTANT:
-		case IS_CONSTANT_ARRAY:
-		default:
-			return 0;
-	}
-	return 1;
-}
-/* }}} */
-
-/** {{{ luasandbox_push_zval_userdata
- *
- * Push a full userdata on to the stack, which stores a zval* in its block. 
- * Increment its reference count and set its metatable so that it will be freed 
- * at the appropriate time.
- */
-static void luasandbox_push_zval_userdata(lua_State * L, zval * z)
-{
-	zval ** ud;
-	ud = (zval**)lua_newuserdata(L, sizeof(zval*));
-	*ud = z;
-	Z_ADDREF_P(z);
-
-	lua_getfield(L, LUA_REGISTRYINDEX, "php_luasandbox_zval_metatable");
-	lua_setmetatable(L, -2);
-}
-/* }}} */
-
-/** {{{ luasandbox_push_hashtable
- *
- * Helper function for luasandbox_push_zval. Create a new table on the top of 
- * the stack and add the zvals in the HashTable to it. 
- */
-static int luasandbox_push_hashtable(lua_State * L, HashTable * ht)
-{
-	Bucket * p;
-
-	// Recursion requires an arbitrary amount of stack space so we have to 
-	// check the stack.
-	luaL_checkstack(L, 10, "converting PHP array to Lua");
-
-	lua_newtable(L);
-	if (!ht || !ht->nNumOfElements) {
-		return 1;
-	}
-	if (ht->nApplyCount) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "recursion detected");
-		return 0;
-	}
-	ht->nApplyCount++;
-	for (p = ht->pListHead; p; p = p->pListNext) {
-		if (p->nKeyLength) {
-			lua_pushlstring(L, p->arKey, p->nKeyLength - 1);
-		} else {
-			lua_pushinteger(L, p->h);
-		}
-		
-		if (!luasandbox_push_zval(L, *(zval**)p->pData)) {
-			// Failed to process that data value
-			// Pop the key and the half-constructed table
-			lua_pop(L, 2);
-			ht->nApplyCount--;
-			return 0;
-		}
-
-		lua_settable(L, -3);
-	}
-	ht->nApplyCount--;
-	return 1;
-}
-/* }}} */
-
-/** {{{ luasandbox_lua_to_zval
- *
- * Convert a lua value to a zval.
- *
- * If a value is encountered that can't be converted to a zval, a LuaPlaceholder
- * object is returned instead.
- *
- * @param z A pointer to the destination zval
- * @param L The lua state
- * @param index The stack index to the input value
- * @param sandbox_zval A zval poiting to a valid LuaSandbox object which will be
- *     used for the parent object of any LuaSandboxFunction objects created.
- * @param recursionGuard A hashtable for keeping track of tables that have been 
- *     processed, to allow infinite recursion to be avoided. External callers 
- *     should set this to NULL.
- */
-static void luasandbox_lua_to_zval(zval * z, lua_State * L, int index, 
-	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC)
-{
-	switch (lua_type(L, index)) {
-		case LUA_TNIL:
-			ZVAL_NULL(z);
-			break;
-		case LUA_TNUMBER: {
-			long i;
-			double d, integerPart, fractionalPart;
-			// Lua only provides a single number type
-			// Convert it to a PHP integer if that can be done without loss
-			// of precision
-			d = lua_tonumber(L, index);
-			fractionalPart = modf(d, &integerPart);
-			if (fractionalPart == 0.0 && integerPart >= LONG_MIN && integerPart <= LONG_MAX) {
-				// The number is small enough to fit inside an int. But has it already
-				// been truncated by squeezing it into a double? This is only relevant
-				// where the integer size is greater than the mantissa size.
-				i = (long)integerPart;
-				if (LONG_MAX < (1LL << DBL_MANT_DIG)
-					|| labs(i) < (1L << DBL_MANT_DIG))
-				{
-					ZVAL_LONG(z, i);
-				} else {				
-					ZVAL_DOUBLE(z, d);
-				}
-			} else {
-				ZVAL_DOUBLE(z, d);
-			}
-			break;
-		}
-		case LUA_TBOOLEAN:
-			ZVAL_BOOL(z, lua_toboolean(L, index));
-			break;
-		case LUA_TSTRING: {
-			const char * str;
-			size_t length;
-			str = lua_tolstring(L, index, &length);
-			ZVAL_STRINGL(z, str, length, 1);
-			break;
-		}
-		case LUA_TTABLE: {
-			const void * ptr = lua_topointer(L, index);
-			void * data = NULL;
-			int allocated = 0;
-			if (recursionGuard) {
-				// Check for circular reference (infinite recursion)
-				if (zend_hash_find(recursionGuard, (char*)&ptr, sizeof(void*), &data) == SUCCESS) {
-					// Found circular reference!
-					object_init_ex(z, luasandboxplaceholder_ce);
-					break;
-				}
-			} else {
-				ALLOC_HASHTABLE(recursionGuard);
-				zend_hash_init(recursionGuard, 1, NULL, NULL, 0);
-				allocated = 1;
-			}
-
-			// Add the current table to the recursion guard hashtable
-			// Use the pointer as the key, zero-length data
-			zend_hash_update(recursionGuard, (char*)&ptr, sizeof(void*), "", 1, NULL);
-
-			// Process the array
-			array_init(z);
-			luasandbox_lua_to_array(Z_ARRVAL_P(z), L, index, sandbox_zval, recursionGuard TSRMLS_CC);
-
-			if (allocated) {
-				zend_hash_destroy(recursionGuard);
-				FREE_HASHTABLE(recursionGuard);
-			}
-			break;
-		}
-		case LUA_TFUNCTION: {
-			int func_index;
-			php_luasandboxfunction_obj * func_obj;
-			php_luasandbox_obj * sandbox = (php_luasandbox_obj*)
-				zend_object_store_get_object(sandbox_zval);
-
-			// Normalise the input index so that we can push without invalidating it.
-			if (index < 0) {
-				index += lua_gettop(L) + 1;
-			}
-			
-			// Get the chunks table
-			lua_getfield(L, LUA_REGISTRYINDEX, "php_luasandbox_chunks");
-
-			// Get the next free index
-			if (sandbox->function_index >= INT_MAX) {
-				ZVAL_NULL(z);
-				lua_pop(L, 1);
-				break;
-			}
-			func_index = ++(sandbox->function_index);
-
-			// Store it in the chunks table
-			lua_pushvalue(L, index);
-			lua_rawseti(L, -2, func_index);
-
-			// Create a LuaSandboxFunction object to hold a reference to the function
-			object_init_ex(z, luasandboxfunction_ce);
-			func_obj = (php_luasandboxfunction_obj*)zend_object_store_get_object(z);
-			func_obj->index = func_index;
-			func_obj->sandbox = sandbox_zval;
-			Z_ADDREF_P(sandbox_zval);
-
-			// Balance the stack
-			lua_pop(L, 1);
-			break;
-		}
-		case LUA_TUSERDATA:
-		case LUA_TTHREAD:
-		case LUA_TLIGHTUSERDATA:
-		default:
-			// TODO: provide derived classes for each type
-			object_init_ex(z, luasandboxplaceholder_ce);
-	}
-}
-/* }}} */
-
-/** {{{ luasandbox_lua_to_array
- *
- * Append the elements of the table in the specified index to the given HashTable.
- */
-static void luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
-	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC)
-{
-	const char * str;
-	size_t length;
-	zval *value;
-
-	// Normalise the input index so that we can push without invalidating it.
-	if (index < 0) {
-		index += lua_gettop(L) + 1;
-	}
-
-	lua_pushnil(L);
-	while (lua_next(L, index) != 0) {
-		MAKE_STD_ZVAL(value);
-		luasandbox_lua_to_zval(value, L, -1, sandbox_zval, recursionGuard TSRMLS_CC);
-		
-		// Make a copy of the key so that we can call lua_tolstring() which is destructive
-		lua_pushvalue(L, -2);
-		str = lua_tolstring(L, -1, &length);
-		zend_hash_update(ht, str, length + 1, (void*)&value, sizeof(zval*), NULL);
-
-		// Delete the copy and the value
-		lua_pop(L, 2);
-	}
-}
-/* }}} */
-
 /** {{{ luasandbox_get_php_obj
  *
  * Get the object data for a lua state.
  */
-static php_luasandbox_obj * luasandbox_get_php_obj(lua_State * L)
+php_luasandbox_obj * luasandbox_get_php_obj(lua_State * L)
 {
 	php_luasandbox_obj * obj;
 	lua_getfield(L, LUA_REGISTRYINDEX, "php_luasandbox_obj");
@@ -1716,84 +1164,6 @@ static int luasandbox_dump_writer(lua_State * L, const void * p, size_t sz, void
 	smart_str * buf = (smart_str *)ud;
 	smart_str_appendl(buf, p, sz);
 	return 0;
-}
-/* }}} */
-
-/** {{{ luasandbox_base_tostring
- *
- * This is identical to luaB_tostring except that it does not call lua_topointer().
- */
-static int luasandbox_base_tostring(lua_State * L)
-{
-	luaL_checkany(L, 1);
-	if (luaL_callmeta(L, 1, "__tostring"))  /* is there a metafield? */
-		return 1;  /* use its value */
-	switch (lua_type(L, 1)) {
-		case LUA_TNUMBER:
-			lua_pushstring(L, lua_tostring(L, 1));
-			break;
-		case LUA_TSTRING:
-			lua_pushvalue(L, 1);
-			break;
-		case LUA_TBOOLEAN:
-			lua_pushstring(L, (lua_toboolean(L, 1) ? "true" : "false"));
-			break;
-		case LUA_TNIL:
-			lua_pushliteral(L, "nil");
-			break;
-		default:
-			lua_pushfstring(L, "%s", luaL_typename(L, 1));
-			break;
-	}
-	return 1;
-}
-/* }}} */
-
-/** {{{ luasandbox_math_random
- *
- * A math.random implementation that doesn't share state with PHP's rand()
- */
-static int luasandbox_math_random(lua_State * L)
-{
-	php_luasandbox_obj * sandbox = luasandbox_get_php_obj(L);
-
-	int i = rand_r(&sandbox->random_seed);
-	if (i >= RAND_MAX) {
-		i -= RAND_MAX;
-	}
-	lua_Number r = (lua_Number)i / (lua_Number)RAND_MAX;
-	switch (lua_gettop(L)) {  /* check number of arguments */
-		case 0: {  /* no arguments */
-			lua_pushnumber(L, r);  /* Number between 0 and 1 */
-			break;
-		}
-		case 1: {  /* only upper limit */
-			int u = luaL_checkint(L, 1);
-			luaL_argcheck(L, 1<=u, 1, "interval is empty");
-			lua_pushnumber(L, floor(r*u)+1);  /* int between 1 and `u' */
-			break;
-		}
-		case 2: {  /* lower and upper limits */
-			int l = luaL_checkint(L, 1);
-			int u = luaL_checkint(L, 2);
-			luaL_argcheck(L, l<=u, 2, "interval is empty");
-			lua_pushnumber(L, floor(r*(u-l+1))+l);  /* int between `l' and `u' */
-			break;
-		}
-		default: return luaL_error(L, "wrong number of arguments");
-	}
-	return 1;
-}
-/* }}} */
-
-/** {{{ luasandbox_math_randomseed
- *
- * Set the seed for the custom math.random.
- */
-static int luasandbox_math_randomseed(lua_State * L)
-{
-	php_luasandbox_obj * sandbox = luasandbox_get_php_obj(L);
-	sandbox->random_seed = (unsigned int)luaL_checkint(L, 1);
 }
 /* }}} */
 /*
