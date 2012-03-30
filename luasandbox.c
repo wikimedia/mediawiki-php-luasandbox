@@ -44,8 +44,6 @@ static void luasandbox_handle_emergency_timeout(php_luasandbox_obj * sandbox);
 static int luasandbox_call_php(lua_State * L);
 static int luasandbox_dump_writer(lua_State * L, const void * p, size_t sz, void * ud);
 
-char luasandbox_timeout_message[] = "The maximum execution time for this script was exceeded";
-
 zend_class_entry *luasandbox_ce;
 zend_class_entry *luasandboxerror_ce;
 zend_class_entry *luasandboxemergencytimeout_ce;
@@ -393,7 +391,7 @@ static int luasandbox_panic(lua_State * L)
 {
 	php_error_docref(NULL TSRMLS_CC, E_ERROR,
 		"PANIC: unprotected error in call to Lua API (%s)",
-		lua_tostring(L, -1));
+		luasandbox_error_to_string(L, -1));
 	return 0;
 }
 /* }}} */
@@ -535,7 +533,7 @@ static void luasandbox_handle_emergency_timeout(php_luasandbox_obj * sandbox)
  */
 static void luasandbox_handle_error(lua_State * L, int status)
 {
-	const char * errorMsg = lua_tostring(L, -1);
+	const char * errorMsg = luasandbox_error_to_string(L, -1);
 	lua_pop(L, 1);
 	if (!EG(exception)) {
 		zend_throw_exception(luasandboxerror_ce, (char*)errorMsg, status);
@@ -1117,7 +1115,9 @@ static int luasandbox_call_php(lua_State * L)
 
 	// If an exception occurred, convert it to a Lua error (just to unwind the stack)
 	if (EG(exception)) {
-		luaL_error(L, "[exception]");
+		lua_pushstring(L, "[exception]");
+		luasandbox_wrap_fatal(L);
+		lua_error(L);
 	}
 	return num_results;
 }

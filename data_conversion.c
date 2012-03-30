@@ -19,6 +19,13 @@ static int luasandbox_push_hashtable(lua_State * L, HashTable * ht);
 extern zend_class_entry *luasandboxfunction_ce;
 extern zend_class_entry *luasandboxplaceholder_ce;
 
+/**
+ * An int, the address of which is used as a fatal error marker. The value is 
+ * not used.
+ */
+int luasandbox_fatal_error_marker = 0;
+
+
 /** {{{ luasandbox_data_conversion_init
  *
  * Set up a lua_State so that this module can work with it.
@@ -335,6 +342,82 @@ static void luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
 
 		// Delete the copy and the value
 		lua_pop(L, 2);
+	}
+}
+/* }}} */
+
+/** {{{ luasandbox_wrap_fatal
+ *
+ * Pop a value off the top of the stack, and push a fatal error wrapper 
+ * containing the value.
+ */
+void luasandbox_wrap_fatal(lua_State * L)
+{
+	// Create the table and put the marker in it as element 1
+	lua_createtable(L, 0, 2);
+	lua_pushlightuserdata(L, &luasandbox_fatal_error_marker);
+	lua_rawseti(L, -2, 1);
+	
+	// Swap the table with the input value, so that the value is on the top,
+	// then put the value in the table as element 2
+	lua_insert(L, -2);
+	lua_rawseti(L, -2, 2);
+}
+/* }}} */
+
+/** {{{ luasandbox_is_fatal
+ *
+ * Check if the value at the given stack index is a fatal error wrapper 
+ * created by luasandbox_wrap_fatal(). Return 1 if it is, 0 otherwise.
+ */
+int luasandbox_is_fatal(lua_State * L, int index)
+{
+	void * ud;
+	int haveIndex2 = 0;
+
+	if (!lua_istable(L, index)) {
+		return 0;
+	}
+
+	lua_rawgeti(L, index, 1);
+	ud = lua_touserdata(L, -1);
+	lua_pop(L, 1);
+	if (ud != &luasandbox_fatal_error_marker) {
+		return 0;
+	}
+
+	lua_rawgeti(L, index, 2);
+	haveIndex2 = !lua_isnil(L, -1);
+	lua_pop(L, 1);
+	return haveIndex2;
+}
+/* }}} */
+
+/** {{{
+ *
+ * If the value at the given stack index is a fatal error wrapper, convert 
+ * the error object it wraps to a string. If the value is anything else, 
+ * convert it directly to a string. If the error object is not convertible
+ * to a string, return "unknown error".
+ *
+ * This calls lua_tolstring() and will corrupt the value on the stack as 
+ * described in that function's documentation. The string is valid until the 
+ * Lua value is destroyed.
+ */
+char * luasandbox_error_to_string(lua_State * L, int index)
+{
+	char * s;
+	if (luasandbox_is_fatal(L, index)) {
+		lua_rawgeti(L, index, 2);
+		s = lua_tostring(L, -1);
+		lua_pop(L, 1);
+	} else {
+		s = lua_tostring(L, index);
+	}
+	if (!s) {
+		return "unknown error";
+	} else {
+		return s;
 	}
 }
 /* }}} */

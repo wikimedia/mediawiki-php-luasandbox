@@ -22,7 +22,6 @@ void luasandbox_alloc_delete_state(php_luasandbox_alloc * alloc, lua_State * L);
 /* luasandbox.c */
 
 extern zend_module_entry luasandbox_module_entry;
-extern char luasandbox_timeout_message[];
 
 #define phpext_luasandbox_ptr &luasandbox_module_entry
 
@@ -104,12 +103,12 @@ php_luasandbox_obj * luasandbox_get_php_obj(lua_State * L);
  * unsafe to call longjmp() to return control to PHP. If the flag is not 
  * correctly set, memory may be corrupted and security compromised.
  */
-inline void luasandbox_enter_php(lua_State * L, php_luasandbox_obj * intern)
+static inline void luasandbox_enter_php(lua_State * L, php_luasandbox_obj * intern)
 {
 	intern->in_php ++;
 	if (intern->timed_out) {
 		intern->in_php --;
-		luaL_error(L, luasandbox_timeout_message);
+		luasandbox_timer_timeout_error(L);
 	}
 }
 /* }}} */
@@ -119,7 +118,7 @@ inline void luasandbox_enter_php(lua_State * L, php_luasandbox_obj * intern)
  * This function must be called after luasandbox_enter_php, before the callback 
  * from Lua returns.
  */
-inline void luasandbox_leave_php(lua_State * L, php_luasandbox_obj * intern)
+static inline void luasandbox_leave_php(lua_State * L, php_luasandbox_obj * intern)
 {
 	intern->in_php --;
 }
@@ -138,6 +137,10 @@ int luasandbox_push_zval(lua_State * L, zval * z);
 void luasandbox_push_zval_userdata(lua_State * L, zval * z);
 void luasandbox_lua_to_zval(zval * z, lua_State * L, int index, 
 	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC);
+void luasandbox_wrap_fatal(lua_State * L);
+int luasandbox_is_fatal(lua_State * L, int index);
+char * luasandbox_error_to_string(lua_State * L, int index);
+
 
 #endif	/* PHP_LUASANDBOX_H */
 

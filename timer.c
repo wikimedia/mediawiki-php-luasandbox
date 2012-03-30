@@ -20,6 +20,7 @@ void luasandbox_timer_start(luasandbox_timer_set * lts,
 		struct timespec * normal_timeout,
 		struct timespec * emergency_timeout) {}
 void luasandbox_timer_stop(luasandbox_timer_set * lts) {}
+void luasandbox_timer_timeout_error(lua_State *L) {}
 
 #else
 
@@ -28,6 +29,8 @@ static void luasandbox_timer_create(luasandbox_timer * lt, php_luasandbox_obj * 
 		int emergency);
 static void luasandbox_timer_timeout_hook(lua_State *L, lua_Debug *ar);
 static void luasandbox_timer_settime(luasandbox_timer * lt, struct timespec * ts);
+
+char luasandbox_timeout_message[] = "The maximum execution time for this script was exceeded";
 
 void luasandbox_timer_install_handler(struct sigaction * oldact)
 {
@@ -46,6 +49,7 @@ void luasandbox_timer_remove_handler(struct sigaction * oldact)
 static void luasandbox_timer_handle(int signo, siginfo_t * info, void * context)
 {
 	luasandbox_timer_callback_data * data;
+	lua_State * L;
 	
 	if (signo != LUASANDBOX_SIGNAL
 			|| info->si_code != SI_TIMER
@@ -56,6 +60,7 @@ static void luasandbox_timer_handle(int signo, siginfo_t * info, void * context)
 
 	data = (luasandbox_timer_callback_data*)info->si_value.sival_ptr;
 	data->sandbox->timed_out = 1;
+	L = data->sandbox->state;
 	if (data->emergency) {
 		sigset_t set;
 		sigemptyset(&set);
@@ -68,11 +73,13 @@ static void luasandbox_timer_handle(int signo, siginfo_t * info, void * context)
 					"was exceeded and a PHP callback failed to return");
 		} else {
 			// The Lua state is dirty now and can't be used again.
-			luaL_error(data->sandbox->state, "emergency timeout");
+			lua_pushstring(L, "emergency timeout");
+			luasandbox_wrap_fatal(L);
+			lua_error(L);
 		}
 	} else {
 		// Set a hook which will terminate the script execution in a graceful way
-		lua_sethook(data->sandbox->state, luasandbox_timer_timeout_hook,
+		lua_sethook(L, luasandbox_timer_timeout_hook,
 			LUA_MASKCALL | LUA_MASKRET | LUA_MASKLINE, 1);
 	}
 }
@@ -82,7 +89,14 @@ static void luasandbox_timer_timeout_hook(lua_State *L, lua_Debug *ar)
 	// Avoid infinite recursion
 	lua_sethook(L, luasandbox_timer_timeout_hook, 0, 0);
 	// Do a longjmp to report the timeout error
-	luaL_error(L, luasandbox_timeout_message);
+	luasandbox_timer_timeout_error(L);
+}
+
+void luasandbox_timer_timeout_error(lua_State *L)
+{
+	lua_pushstring(L, luasandbox_timeout_message);
+	luasandbox_wrap_fatal(L);
+	lua_error(L);
 }
 
 void luasandbox_timer_start(luasandbox_timer_set * lts, 
