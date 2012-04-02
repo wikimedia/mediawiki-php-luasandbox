@@ -14,6 +14,7 @@
 
 #include "php.h"
 #include "php_luasandbox.h"
+#include "luasandbox_unicode.h"
 
 static HashTable * luasandbox_lib_get_allowed_globals(TSRMLS_D);
 
@@ -128,6 +129,9 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 	lua_pushcfunction(L, luasandbox_math_randomseed);
 	lua_setfield(L, -2, "randomseed");
 	lua_pop(L, 1);
+	
+	// Install string-related functions
+	luasandbox_install_unicode_functions(L);
 }
 /* }}} */
 
