@@ -92,6 +92,7 @@ typedef struct _php_luasandboxfunction_obj php_luasandboxfunction_obj;
 
 
 php_luasandbox_obj * luasandbox_get_php_obj(lua_State * L);
+void luasandbox_timer_timeout_error(lua_State *L);
 
 /** {{{ luasandbox_enter_php
  *
@@ -139,7 +140,7 @@ void luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC);
 void luasandbox_wrap_fatal(lua_State * L);
 int luasandbox_is_fatal(lua_State * L, int index);
-char * luasandbox_error_to_string(lua_State * L, int index);
+const char * luasandbox_error_to_string(lua_State * L, int index);
 
 
 #endif	/* PHP_LUASANDBOX_H */

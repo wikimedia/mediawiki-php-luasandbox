@@ -412,9 +412,9 @@ int luasandbox_is_fatal(lua_State * L, int index)
  * described in that function's documentation. The string is valid until the 
  * Lua value is destroyed.
  */
-char * luasandbox_error_to_string(lua_State * L, int index)
+const char * luasandbox_error_to_string(lua_State * L, int index)
 {
-	char * s;
+	const char * s;
 	if (luasandbox_is_fatal(L, index)) {
 		lua_rawgeti(L, index, 2);
 		s = lua_tostring(L, -1);

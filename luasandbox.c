@@ -46,6 +46,12 @@ static int luasandbox_dump_writer(lua_State * L, const void * p, size_t sz, void
 
 zend_class_entry *luasandbox_ce;
 zend_class_entry *luasandboxerror_ce;
+zend_class_entry *luasandboxruntimeerror_ce;
+zend_class_entry *luasandboxfatalerror_ce;
+zend_class_entry *luasandboxsyntaxerror_ce;
+zend_class_entry *luasandboxmemoryerror_ce;
+zend_class_entry *luasandboxerrorerror_ce;
+zend_class_entry *luasandboxtimeout_ce;
 zend_class_entry *luasandboxemergencytimeout_ce;
 zend_class_entry *luasandboxplaceholder_ce;
 zend_class_entry *luasandboxfunction_ce;
@@ -168,9 +174,33 @@ PHP_MINIT_FUNCTION(luasandbox)
 	luasandboxerror_ce = zend_register_internal_class_ex(
 			&ce, zend_exception_get_default(TSRMLS_C), NULL TSRMLS_CC);
 
+	INIT_CLASS_ENTRY(ce, "LuaSandboxRuntimeError", luasandbox_empty_methods);
+	luasandboxruntimeerror_ce = zend_register_internal_class_ex(
+			&ce, luasandboxerror_ce, NULL TSRMLS_CC);
+
+	INIT_CLASS_ENTRY(ce, "LuaSandboxFatalError", luasandbox_empty_methods);
+	luasandboxfatalerror_ce = zend_register_internal_class_ex(
+			&ce, luasandboxerror_ce, NULL TSRMLS_CC);
+
+	INIT_CLASS_ENTRY(ce, "LuaSandboxSyntaxError", luasandbox_empty_methods);
+	luasandboxsyntaxerror_ce = zend_register_internal_class_ex(
+		&ce, luasandboxfatalerror_ce, NULL TSRMLS_CC);
+
+	INIT_CLASS_ENTRY(ce, "LuaSandboxMemoryError", luasandbox_empty_methods);
+	luasandboxmemoryerror_ce = zend_register_internal_class_ex(
+			&ce, luasandboxfatalerror_ce, NULL TSRMLS_CC);
+
+	INIT_CLASS_ENTRY(ce, "LuaSandboxErrorError", luasandbox_empty_methods);
+	luasandboxerrorerror_ce = zend_register_internal_class_ex(
+			&ce, luasandboxfatalerror_ce, NULL TSRMLS_CC);
+
+	INIT_CLASS_ENTRY(ce, "LuaSandboxTimeout", luasandbox_empty_methods);
+	luasandboxtimeout_ce = zend_register_internal_class_ex(
+			&ce, luasandboxfatalerror_ce, NULL TSRMLS_CC);
+
 	INIT_CLASS_ENTRY(ce, "LuaSandboxEmergencyTimeout", luasandbox_empty_methods);
 	luasandboxemergencytimeout_ce = zend_register_internal_class_ex(
-		&ce, luasandboxerror_ce, NULL TSRMLS_CC);
+		&ce, luasandboxfatalerror_ce, NULL TSRMLS_CC);
 
 	zend_declare_class_constant_long(luasandboxerror_ce, 
 		"RUN", sizeof("RUN"), LUA_ERRRUN);
@@ -534,9 +564,24 @@ static void luasandbox_handle_emergency_timeout(php_luasandbox_obj * sandbox)
 static void luasandbox_handle_error(lua_State * L, int status)
 {
 	const char * errorMsg = luasandbox_error_to_string(L, -1);
+	zend_class_entry * ce;
 	lua_pop(L, 1);
 	if (!EG(exception)) {
-		zend_throw_exception(luasandboxerror_ce, (char*)errorMsg, status);
+		switch (status) {
+			case LUA_ERRRUN:
+				ce = luasandboxruntimeerror_ce;
+				break;
+			case LUA_ERRSYNTAX:
+				ce = luasandboxsyntaxerror_ce;
+				break;
+			case LUA_ERRMEM:
+				ce = luasandboxmemoryerror_ce;
+				break;
+			case LUA_ERRERR:
+				ce = luasandboxerrorerror_ce;
+				break;
+		}
+		zend_throw_exception(ce, (char*)errorMsg, status);
 	}
 }
 /* }}} */
@@ -1039,6 +1084,23 @@ PHP_METHOD(LuaSandbox, registerLibrary)
 }
 /* }}} */
 
+/** {{{ luasandbox_instanceof
+ * Based on is_derived_class in zend_object_handlers.c
+ */
+static inline zend_bool luasandbox_instanceof(
+	zend_class_entry *child_class, zend_class_entry *parent_class)
+{
+	while (child_class) {
+		if (child_class == parent_class) {
+			return 1;
+		}
+		child_class = child_class->parent;
+	}
+
+	return 0;
+}
+/* }}} */
+
 /** {{{ luasandbox_call_php
  *
  * The Lua callback for calling PHP functions. See the doc comment on 
@@ -1113,10 +1175,24 @@ static int luasandbox_call_php(lua_State * L)
 	efree(temp);
 	luasandbox_leave_php(L, intern);
 
-	// If an exception occurred, convert it to a Lua error (just to unwind the stack)
+	// If an exception occurred, convert it to a Lua error
 	if (EG(exception)) {
-		lua_pushstring(L, "[exception]");
-		luasandbox_wrap_fatal(L);
+		// Get the error message and push it to the stack
+		zend_class_entry * ce = Z_OBJCE_P(EG(exception));
+		zval * zmsg = zend_read_property(ce, EG(exception), "message", sizeof("message")-1, 1 TSRMLS_CC);
+		if (zmsg && Z_TYPE_P(zmsg) == IS_STRING) {
+			lua_pushlstring(L, Z_STRVAL_P(zmsg), Z_STRLEN_P(zmsg));
+		} else {
+			lua_pushliteral(L, "[unknown exception]");
+		}
+
+		// If the exception was a LuaSandboxRuntimeError or a subclass, clear the 
+		// exception and raise a non-fatal (catchable) error
+		if (luasandbox_instanceof(ce, luasandboxruntimeerror_ce)) {
+			zend_clear_exception(TSRMLS_C);
+		} else {
+			luasandbox_wrap_fatal(L);
+		}
 		lua_error(L);
 	}
 	return num_results;
