@@ -43,6 +43,9 @@ static void luasandbox_handle_error(lua_State * L, int status);
 static void luasandbox_handle_emergency_timeout(php_luasandbox_obj * sandbox);
 static int luasandbox_call_php(lua_State * L);
 static int luasandbox_dump_writer(lua_State * L, const void * p, size_t sz, void * ud);
+static zend_bool luasandbox_instanceof(
+	zend_class_entry *child_class, zend_class_entry *parent_class);
+
 
 zend_class_entry *luasandbox_ce;
 zend_class_entry *luasandboxerror_ce;
@@ -1016,7 +1019,8 @@ php_luasandbox_obj * luasandbox_get_php_obj(lua_State * L)
  * relevant PHP code.
  *
  * The first parameter is the name of the library. In the Lua state, the global
- * variable of this name will be set to the table of functions.
+ * variable of this name will be set to the table of functions. If the table 
+ * already exists, the new functions will be added to it.
  *
  * The second parameter is an array, where each key is a function name, and 
  * each value is a corresponding PHP callback.
@@ -1051,16 +1055,13 @@ PHP_METHOD(LuaSandbox, registerLibrary)
 	lua_pushlstring(L, libname, libname_len);
 	lua_pushvalue(L, -1);
 	lua_rawget(L, LUA_GLOBALSINDEX);
-	if (lua_type(L, -1) != LUA_TNIL) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING,
-			"library \"%s\" already exists", libname);
-		RETURN_FALSE;
-	}
-	// Remove the nil
-	lua_pop(L, 1);
+	if (lua_type(L, -1) == LUA_TNIL) {
+		// Remove the nil
+		lua_pop(L, 1);
 
-	// Create the new table
-	lua_createtable(L, 0, functions->nNumOfElements);
+		// Create the new table
+		lua_createtable(L, 0, functions->nNumOfElements);
+	}
 
 	for (p = functions->pListHead; p; p = p->pListNext) {
 		// Push the key
@@ -1087,7 +1088,7 @@ PHP_METHOD(LuaSandbox, registerLibrary)
 /** {{{ luasandbox_instanceof
  * Based on is_derived_class in zend_object_handlers.c
  */
-static inline zend_bool luasandbox_instanceof(
+static zend_bool luasandbox_instanceof(
 	zend_class_entry *child_class, zend_class_entry *parent_class)
 {
 	while (child_class) {
