@@ -4,3 +4,19 @@ This is a PHP extension. To compile it:
  $ ./configure
  $ make
 
+It requires a few dependencies:
+
+ luajit - LUA just in time compiler. http://www.luajit.org/
+ ICU - set of libraries providing Unicode and Globalization support
+
+== Mac OS X ==
+
+Using brew:
+ brew install luajit
+ brew install icu4c
+ # Formula being keg-only, you need to link it manually
+ brew link icu4c
+
+That will makes pkg-config files available. Check them using:
+ ls -l `brew --prefix/lib/pkgconfig/icu*pc`
+
