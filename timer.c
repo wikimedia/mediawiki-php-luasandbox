@@ -15,12 +15,13 @@
 
 void luasandbox_timer_install_handler(struct sigaction * oldact) {}
 void luasandbox_timer_remove_handler(struct sigaction * oldact) {}
-void luasandbox_timer_start(luasandbox_timer_set * lts, 
+void luasandbox_timer_start(luasandbox_timer_set * lts,
 		php_luasandbox_obj * sandbox,
 		struct timespec * normal_timeout,
 		struct timespec * emergency_timeout) {}
 void luasandbox_timer_stop(luasandbox_timer_set * lts) {}
 void luasandbox_timer_timeout_error(lua_State *L) {}
+char luasandbox_timeout_message[];
 
 #else
 

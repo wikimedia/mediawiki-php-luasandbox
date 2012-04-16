@@ -38,6 +38,10 @@ typedef struct {
 #define LUASANDBOX_NO_CLOCK
 
 typedef struct {} luasandbox_timer;
+typedef struct {} luasandbox_timer_set;
+void timer_settime();
+void timer_delete();
+void timer_create();
 
 #endif
 
