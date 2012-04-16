@@ -1038,10 +1038,12 @@ php_luasandbox_obj * luasandbox_get_php_obj(lua_State * L)
  * each value is a corresponding PHP callback.
  *
  * Both Lua and PHP allow functions to be called with any number of arguments. 
- * The parameters to the Lua function will be passed through to the PHP. A 
- * single value will always be returned to Lua, which is the return value from
- * the PHP function. If the PHP function does not return any value, Lua will 
- * see a return value of nil.
+ * The parameters to the Lua function will be passed through to the PHP. 
+ *
+ * Lua supports multiple return values. The PHP function should return either 
+ * null (for zero return values) or an array of return values. The keys of the
+ * return array will not be used, rather the values will be taken in their 
+ * internal order.
  */
 PHP_METHOD(LuaSandbox, registerLibrary)
 {
@@ -1136,6 +1138,7 @@ static int luasandbox_call_php(lua_State * L)
 	zval **pointers;
 	zval ***double_pointers;
 	int num_results = 0;
+	Bucket *bucket;	
 	TSRMLS_FETCH();
 
 	// Based on zend_parse_arg_impl()
@@ -1173,9 +1176,20 @@ static int luasandbox_call_php(lua_State * L)
 	if (zend_call_function(&fci, &fcc TSRMLS_CC) == SUCCESS 
 		&& fci.retval_ptr_ptr && *fci.retval_ptr_ptr) 
 	{
-		// Push the return value back to Lua
-		luasandbox_push_zval(L, *fci.retval_ptr_ptr);
-		num_results = 1;
+		// Push the return values back to Lua
+		if (Z_TYPE_PP(fci.retval_ptr_ptr) == IS_NULL) {
+			// No action
+		} else if (Z_TYPE_PP(fci.retval_ptr_ptr) == IS_ARRAY) {
+			bucket = Z_ARRVAL_PP(fci.retval_ptr_ptr)->pListHead;
+			while (bucket) {
+				luasandbox_push_zval(L, *((zval **)bucket->pData));
+				bucket = bucket->pListNext;
+				num_results++;
+			}
+		} else {
+			php_error_docref(NULL TSRMLS_CC, E_WARNING, 
+				"function tried to return a single value to Lua without wrapping it in an array");
+		}
 		zval_ptr_dtor(&retval_ptr);
 	}
 

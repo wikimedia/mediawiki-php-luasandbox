@@ -8,7 +8,7 @@ $f = $sandbox->loadString('while true do end');
 $dump = $f->dump();
 try {
 	$f->call();
-} catch (LuaSandboxEmergencyTimeout $e) {
+} catch (LuaSandboxEmergencyTimeoutError $e) {
 	print $e->getMessage() . "\n";
 }
 $f->call();

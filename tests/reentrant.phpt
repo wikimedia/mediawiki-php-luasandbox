@@ -23,14 +23,14 @@ $sandbox->registerLibrary( 'test', array( 'factorial' => 'factorial' ) );
 function factorial($n) {
 	global $luaFactorial;
 	if ($n <= 1) {
-		return 1;
+		return array(1);
 	} else {
 		$ret = $luaFactorial->call($n - 1);
-		return $n * $ret[0];
+		return array($n * $ret[0]);
 	}
 }
 
-print factorial(10) . "\n";
+print implode('', factorial(10)) . "\n";
 var_dump( $luaFactorial->call(10) );
 
 try {
