@@ -7,6 +7,7 @@
 #include <lauxlib.h>
 #include <limits.h>
 #include <float.h>
+#include <math.h>
 
 #include "php.h"
 #include "php_luasandbox.h"
@@ -332,10 +333,12 @@ static void luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
 	const char * str;
 	size_t length;
 	zval *value;
+	lua_Number n;
+	int top = lua_gettop(L);
 
 	// Normalise the input index so that we can push without invalidating it.
 	if (index < 0) {
-		index += lua_gettop(L) + 1;
+		index += top + 1;
 	}
 
 	lua_pushnil(L);
@@ -343,13 +346,23 @@ static void luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
 		MAKE_STD_ZVAL(value);
 		luasandbox_lua_to_zval(value, L, -1, sandbox_zval, recursionGuard TSRMLS_CC);
 		
+		if (lua_type(L, -2) == LUA_TNUMBER) {
+			n = lua_tonumber(L, -2);
+			if (n == floor(n)) {
+				// Integer key
+				zend_hash_index_update(ht, n, (void*)&value, sizeof(zval*), NULL);
+				lua_settop(L, top + 1);
+				continue;
+			}
+		}
+
 		// Make a copy of the key so that we can call lua_tolstring() which is destructive
 		lua_pushvalue(L, -2);
 		str = lua_tolstring(L, -1, &length);
 		zend_hash_update(ht, str, length + 1, (void*)&value, sizeof(zval*), NULL);
 
-		// Delete the copy and the value
-		lua_pop(L, 2);
+		// Pop temporary values off the stack
+		lua_settop(L, top + 1);
 	}
 }
 /* }}} */

@@ -46,6 +46,7 @@ static int luasandbox_dump_writer(lua_State * L, const void * p, size_t sz, void
 static zend_bool luasandbox_instanceof(
 	zend_class_entry *child_class, zend_class_entry *parent_class);
 
+extern char luasandbox_timeout_message[];
 
 zend_class_entry *luasandbox_ce;
 zend_class_entry *luasandboxerror_ce;
@@ -54,8 +55,8 @@ zend_class_entry *luasandboxfatalerror_ce;
 zend_class_entry *luasandboxsyntaxerror_ce;
 zend_class_entry *luasandboxmemoryerror_ce;
 zend_class_entry *luasandboxerrorerror_ce;
-zend_class_entry *luasandboxtimeout_ce;
-zend_class_entry *luasandboxemergencytimeout_ce;
+zend_class_entry *luasandboxtimeouterror_ce;
+zend_class_entry *luasandboxemergencytimeouterror_ce;
 zend_class_entry *luasandboxplaceholder_ce;
 zend_class_entry *luasandboxfunction_ce;
 
@@ -197,12 +198,12 @@ PHP_MINIT_FUNCTION(luasandbox)
 	luasandboxerrorerror_ce = zend_register_internal_class_ex(
 			&ce, luasandboxfatalerror_ce, NULL TSRMLS_CC);
 
-	INIT_CLASS_ENTRY(ce, "LuaSandboxTimeout", luasandbox_empty_methods);
-	luasandboxtimeout_ce = zend_register_internal_class_ex(
+	INIT_CLASS_ENTRY(ce, "LuaSandboxTimeoutError", luasandbox_empty_methods);
+	luasandboxtimeouterror_ce = zend_register_internal_class_ex(
 			&ce, luasandboxfatalerror_ce, NULL TSRMLS_CC);
 
-	INIT_CLASS_ENTRY(ce, "LuaSandboxEmergencyTimeout", luasandbox_empty_methods);
-	luasandboxemergencytimeout_ce = zend_register_internal_class_ex(
+	INIT_CLASS_ENTRY(ce, "LuaSandboxEmergencyTimeoutError", luasandbox_empty_methods);
+	luasandboxemergencytimeouterror_ce = zend_register_internal_class_ex(
 		&ce, luasandboxfatalerror_ce, NULL TSRMLS_CC);
 
 	zend_declare_class_constant_long(luasandboxerror_ce, 
@@ -551,7 +552,7 @@ static void luasandbox_handle_emergency_timeout(php_luasandbox_obj * sandbox)
 	lua_close(sandbox->state);
 	sandbox->state = NULL;
 	sandbox->emergency_timed_out = 0;
-	zend_throw_exception(luasandboxemergencytimeout_ce, 
+	zend_throw_exception(luasandboxemergencytimeouterror_ce, 
 		"The maximum execution time was exceeded "
 		"and the current Lua statement failed to return, leading to "
 		"destruction of the Lua state", LUA_ERRRUN);
@@ -568,11 +569,21 @@ static void luasandbox_handle_error(lua_State * L, int status)
 {
 	const char * errorMsg = luasandbox_error_to_string(L, -1);
 	zend_class_entry * ce;
-	lua_pop(L, 1);
 	if (!EG(exception)) {
+		if (luasandbox_is_fatal(L, -1) && !strcmp(errorMsg, luasandbox_timeout_message)) {
+			ce = luasandboxtimeouterror_ce;
+		}
 		switch (status) {
 			case LUA_ERRRUN:
-				ce = luasandboxruntimeerror_ce;
+				if (luasandbox_is_fatal(L, -1)) {
+					if (!strcmp(errorMsg, luasandbox_timeout_message)) {
+						ce = luasandboxtimeouterror_ce;
+					} else {
+						ce = luasandboxfatalerror_ce;
+					}
+				} else {
+					ce = luasandboxruntimeerror_ce;
+				}
 				break;
 			case LUA_ERRSYNTAX:
 				ce = luasandboxsyntaxerror_ce;
@@ -586,6 +597,7 @@ static void luasandbox_handle_error(lua_State * L, int status)
 		}
 		zend_throw_exception(ce, (char*)errorMsg, status);
 	}
+	lua_pop(L, 1);
 }
 /* }}} */
 
