@@ -23,7 +23,6 @@ static int luasandbox_math_random(lua_State * L);
 static int luasandbox_math_randomseed(lua_State * L);
 static int luasandbox_base_pcall(lua_State * L);
 static int luasandbox_base_xpcall(lua_State *L);
-static int luasandbox_base_setfenv(lua_State *L);
 
 /**
  * Allowed global variables. Omissions are:
@@ -37,7 +36,6 @@ static int luasandbox_base_setfenv(lua_State *L);
  *   * tostring: Provides addresses of tables and functions, which provides an 
  *     easy ASLR workaround or heap address discovery mechanism for a memory 
  *     corruption exploit. We have our own version.
- *   * getfenv, setfenv: Can be used to break module isolation.
  *   * Any new or undocumented functions like newproxy.
  *   * package: cpath, loadlib etc. are insecure.
  *   * coroutine: Not useful for our application so unreviewed at present.
@@ -49,6 +47,7 @@ char * luasandbox_allowed_globals[] = {
 	// base
 	"assert",
 	"error",
+	"getfenv",
 	"getmetatable",
 	"ipairs",
 	"next",
@@ -57,6 +56,7 @@ char * luasandbox_allowed_globals[] = {
 	"rawget",
 	"rawset",
 	"select",
+	"setfenv",
 	"setmetatable",
 	"tonumber",
 	"type",
@@ -107,15 +107,13 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 		}
 	}
 
-	// Install our own versions of tostring, pcall, xpcall, setfenv
+	// Install our own versions of tostring, pcall, xpcall
 	lua_pushcfunction(L, luasandbox_base_tostring);
 	lua_setglobal(L, "tostring");
 	lua_pushcfunction(L, luasandbox_base_pcall);
 	lua_setglobal(L, "pcall");
 	lua_pushcfunction(L, luasandbox_base_xpcall);
 	lua_setglobal(L, "xpcall");
-	lua_pushcfunction(L, luasandbox_base_setfenv);
-	lua_setglobal(L, "setfenv");
 
 	// Remove string.dump: may expose private data
 	lua_getglobal(L, "string");
@@ -350,18 +348,3 @@ static int luasandbox_base_xpcall (lua_State *L)
 }
 /* }}} */
 
-/* {{{ luasandbox_base_setfenv
- *
- * A setfenv() implementation that does not allow integer keys for the first
- * argument.
- */
-static int luasandbox_base_setfenv(lua_State *L)
-{
-	luaL_checktype(L, 2, LUA_TTABLE);
-	lua_pushvalue(L, 2);
-	if (!lua_isfunction(L, 1) || lua_iscfunction(L, 1) || lua_setfenv(L, 1) == 0) {
-		luaL_error(L, "'setfenv' cannot change environment of given object");	
-	}
-	return 1;
-}
-/* }}} */
