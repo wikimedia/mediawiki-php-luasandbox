@@ -66,9 +66,9 @@ void luasandbox_install_unicode_functions(lua_State * L)
 {
 	luaL_newmetatable( L, "luasandbox_ustr" );
 
-	lua_pushstring( L, "__len" );
-	lua_pushcfunction( L, luasandbox_ustr_len );
-	lua_rawset( L, -3 );
+	//lua_pushstring( L, "__len" );
+	//lua_pushcfunction( L, luasandbox_ustr_len );
+	//lua_rawset( L, -3 );
 
 	lua_pushstring( L, "__concat" );
 	lua_pushcfunction( L, luasandbox_ustr_concat );
