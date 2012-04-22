@@ -31,6 +31,7 @@ int luasandbox_ustr_len(lua_State * L);
 int luasandbox_ustr_concat(lua_State * L);
 int luasandbox_ustr_eq(lua_State * L);
 int luasandbox_ustr_index(lua_State * L);
+int luasandbox_ustr_tostring(lua_State * L);
 
 int luasandbox_ustr_ucfirst(lua_State * L);
 int luasandbox_ustr_uc(lua_State * L);
@@ -80,6 +81,10 @@ void luasandbox_install_unicode_functions(lua_State * L)
 
 	lua_pushstring( L, "__index" );
 	lua_pushcfunction( L, luasandbox_ustr_index );
+	lua_rawset( L, -3 );
+
+	lua_pushstring( L, "__tostring" );
+	lua_pushcfunction( L, luasandbox_ustr_tostring );
 	lua_rawset( L, -3 );
 
 	lua_pushcfunction( L, luasandbox_ustr_create );
@@ -355,7 +360,7 @@ int luasandbox_ustr_index(lua_State * L)
 	luasandbox_ustr_header *str;
 	uint8_t *raw;
 
-	str = luaL_checkudata( L, 1, "luasandbox_ustr" );
+	str = luasandbox_checkustring( L, 1 );
 	raw = LUASANDBOX_USTR_RAW(str);
 
 	if( lua_type( L, 2 ) == LUA_TNUMBER ) {
@@ -387,6 +392,24 @@ int luasandbox_ustr_index(lua_State * L)
 		lua_gettable( L, -2 );
 		return 1;
 	}
+}
+/* }}} */
+
+/** {{{ luasandbox_ustr_tostring
+ * 
+ * Lua function providing the tostring() interface.
+ * Returns the UTF-8 version of the ustring.
+ */
+int luasandbox_ustr_tostring(lua_State * L)
+{
+	luasandbox_ustr_header *str;
+	uint8_t *raw;
+
+	str = luasandbox_checkustring( L, 1 );
+	raw = LUASANDBOX_USTR_RAW(str);
+
+	lua_pushlstring( L, raw, str->raw_len );
+	return 1;
 }
 /* }}} */
 
@@ -828,7 +851,7 @@ int luasandbox_ustr_pos(lua_State * L)
 			lua_pushinteger( L, result.cp_index + 1 );
 			return 1;
 		case UTF8_SEARCH_STATUS_NOTFOUND:
-			lua_pushinteger( L, -1 );
+			lua_pushboolean( L, 0 );
 			return 1;
 	}
 }
