@@ -140,7 +140,10 @@ void luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC);
 void luasandbox_wrap_fatal(lua_State * L);
 int luasandbox_is_fatal(lua_State * L, int index);
+int luasandbox_is_trace_error(lua_State * L, int index);
 const char * luasandbox_error_to_string(lua_State * L, int index);
+int luasandbox_attach_trace(lua_State * L);
+void luasandbox_push_structured_trace(lua_State * L, int level);
 
 
 #endif	/* PHP_LUASANDBOX_H */

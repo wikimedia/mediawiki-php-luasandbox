@@ -17,6 +17,7 @@ static void luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
 	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC);
 static int luasandbox_free_zval_userdata(lua_State * L);
 static int luasandbox_push_hashtable(lua_State * L, HashTable * ht);
+static int luasandbox_has_error_marker(lua_State * L, int index, void * marker);
 
 extern zend_class_entry *luasandboxfunction_ce;
 extern zend_class_entry *luasandboxplaceholder_ce;
@@ -27,6 +28,10 @@ extern zend_class_entry *luasandboxplaceholder_ce;
  */
 int luasandbox_fatal_error_marker = 0;
 
+/**
+ * Same as luasandbox_fatal_error_marker but for trace errors
+ */
+int luasandbox_trace_error_marker = 0;
 
 /** {{{ luasandbox_data_conversion_init
  *
@@ -393,24 +398,32 @@ void luasandbox_wrap_fatal(lua_State * L)
  */
 int luasandbox_is_fatal(lua_State * L, int index)
 {
-	void * ud;
-	int haveIndex2 = 0;
+	return luasandbox_has_error_marker(L, index, &luasandbox_fatal_error_marker);
+}
+/* }}} */
 
+/** {{{ luasandbox_is_trace_error
+ */
+int luasandbox_is_trace_error(lua_State * L, int index)
+{
+	return luasandbox_has_error_marker(L, index, &luasandbox_trace_error_marker);
+}
+/* }}} */
+
+/** {{{
+ *
+ * Check if the error at the given stack index has a given marker userdata
+ */
+static int luasandbox_has_error_marker(lua_State * L, int index, void * marker)
+{
+	void * ud;
 	if (!lua_istable(L, index)) {
 		return 0;
 	}
-
 	lua_rawgeti(L, index, 1);
 	ud = lua_touserdata(L, -1);
 	lua_pop(L, 1);
-	if (ud != &luasandbox_fatal_error_marker) {
-		return 0;
-	}
-
-	lua_rawgeti(L, index, 2);
-	haveIndex2 = !lua_isnil(L, -1);
-	lua_pop(L, 1);
-	return haveIndex2;
+	return ud == marker;
 }
 /* }}} */
 
@@ -428,7 +441,10 @@ int luasandbox_is_fatal(lua_State * L, int index)
 const char * luasandbox_error_to_string(lua_State * L, int index)
 {
 	const char * s;
-	if (luasandbox_is_fatal(L, index)) {
+	if (index < 0) {
+		index += lua_gettop(L) + 1;
+	}
+	if (luasandbox_is_fatal(L, index) || luasandbox_is_trace_error(L, index)) {
 		lua_rawgeti(L, index, 2);
 		s = lua_tostring(L, -1);
 		lua_pop(L, 1);
@@ -439,6 +455,67 @@ const char * luasandbox_error_to_string(lua_State * L, int index)
 		return "unknown error";
 	} else {
 		return s;
+	}
+}
+/* }}} */
+
+/** {{{ luasandbox_attach_trace
+ *
+ * Error callback function for lua_pcall(): wrap the error value in a table that
+ * includes backtrace information.
+ */
+int luasandbox_attach_trace(lua_State * L)
+{
+	if (luasandbox_is_fatal(L, 1)) {
+		// Pass fatals through unaltered
+		return 1;
+	}
+
+	// Create the table and put the marker in it as element 1
+	lua_createtable(L, 0, 3);
+	lua_pushlightuserdata(L, &luasandbox_trace_error_marker);
+	lua_rawseti(L, -2, 1);
+	
+	// Swap the table with the input value, so that the value is on the top,
+	// then put the value in the table as element 2
+	lua_insert(L, -2);
+	lua_rawseti(L, -2, 2);
+
+	// Put the backtrace in element 3
+	luasandbox_push_structured_trace(L, 1);
+	lua_rawseti(L, -2, 3);
+	
+	return 1;
+}
+/* }}} */
+
+/** {{{ luasandbox_push_structured_trace
+ *
+ * Make a table representing the current backtrace and push it to the stack.
+ * "level" is the call stack level to start at, 1 for the current function.
+ */
+void luasandbox_push_structured_trace(lua_State * L, int level)
+{
+	lua_Debug ar;
+	lua_newtable(L);
+	int i;
+
+	for (i = level; lua_getstack(L, i, &ar); i++) {
+		lua_getinfo(L, "nSl", &ar);
+		lua_createtable(L, 0, 8);
+		lua_pushstring(L, ar.short_src);
+		lua_setfield(L, -2, "short_src");
+		lua_pushstring(L, ar.what);
+		lua_setfield(L, -2, "what");
+		lua_pushnumber(L, ar.currentline);
+		lua_setfield(L, -2, "currentline");
+		lua_pushstring(L, ar.name);
+		lua_setfield(L, -2, "name");
+		lua_pushstring(L, ar.namewhat);
+		lua_setfield(L, -2, "namewhat");
+		lua_pushnumber(L, ar.linedefined);
+		lua_setfield(L, -2, "linedefined");
+		lua_rawseti(L, -2, i - level + 1);
 	}
 }
 /* }}} */

@@ -39,7 +39,7 @@ static int luasandbox_function_init(zval * this_ptr, php_luasandboxfunction_obj 
 static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, 
 	php_luasandbox_obj * sandbox,
 	zval *** args, zend_uint numArgs, zval * return_value TSRMLS_DC);
-static void luasandbox_handle_error(lua_State * L, int status);
+static void luasandbox_handle_error(php_luasandbox_obj * sandbox, int status);
 static void luasandbox_handle_emergency_timeout(php_luasandbox_obj * sandbox);
 static int luasandbox_call_php(lua_State * L);
 static int luasandbox_dump_writer(lua_State * L, const void * p, size_t sz, void * ud);
@@ -498,7 +498,7 @@ static void luasandbox_load_helper(int binary, INTERNAL_FUNCTION_PARAMETERS)
 	// Parse the string into a function on the stack
 	status = luaL_loadbuffer(L, code, codeLength, chunkName);
 	if (status != 0) {
-		luasandbox_handle_error(L, status);
+		luasandbox_handle_error(sandbox, status);
 		return;
 	}
 
@@ -565,38 +565,67 @@ static void luasandbox_handle_emergency_timeout(php_luasandbox_obj * sandbox)
  * status is returned and an error message pushed to the stack. Throws a suitable
  * exception.
  */
-static void luasandbox_handle_error(lua_State * L, int status)
+static void luasandbox_handle_error(php_luasandbox_obj * sandbox, int status)
 {
+	lua_State * L = sandbox->state;
 	const char * errorMsg = luasandbox_error_to_string(L, -1);
 	zend_class_entry * ce;
-	if (!EG(exception)) {
-		if (luasandbox_is_fatal(L, -1) && !strcmp(errorMsg, luasandbox_timeout_message)) {
-			ce = luasandboxtimeouterror_ce;
-		}
-		switch (status) {
-			case LUA_ERRRUN:
-				if (luasandbox_is_fatal(L, -1)) {
-					if (!strcmp(errorMsg, luasandbox_timeout_message)) {
-						ce = luasandboxtimeouterror_ce;
-					} else {
-						ce = luasandboxfatalerror_ce;
-					}
-				} else {
-					ce = luasandboxruntimeerror_ce;
-				}
-				break;
-			case LUA_ERRSYNTAX:
-				ce = luasandboxsyntaxerror_ce;
-				break;
-			case LUA_ERRMEM:
-				ce = luasandboxmemoryerror_ce;
-				break;
-			case LUA_ERRERR:
-				ce = luasandboxerrorerror_ce;
-				break;
-		}
-		zend_throw_exception(ce, (char*)errorMsg, status);
+	zval *zex, *ztrace;
+	
+	if (EG(exception)) {
+		lua_pop(L, 1);
+		return;
 	}
+
+	if (luasandbox_is_fatal(L, -1) && !strcmp(errorMsg, luasandbox_timeout_message)) {
+		ce = luasandboxtimeouterror_ce;
+	}
+	switch (status) {
+		case LUA_ERRRUN:
+			if (luasandbox_is_fatal(L, -1)) {
+				if (!strcmp(errorMsg, luasandbox_timeout_message)) {
+					ce = luasandboxtimeouterror_ce;
+				} else {
+					ce = luasandboxfatalerror_ce;
+				}
+			} else {
+				ce = luasandboxruntimeerror_ce;
+			}
+			break;
+		case LUA_ERRSYNTAX:
+			ce = luasandboxsyntaxerror_ce;
+			break;
+		case LUA_ERRMEM:
+			ce = luasandboxmemoryerror_ce;
+			break;
+		case LUA_ERRERR:
+			ce = luasandboxerrorerror_ce;
+			break;
+	}
+
+	MAKE_STD_ZVAL(zex);
+	object_init_ex(zex, ce);
+
+	if (luasandbox_is_trace_error(L, -1)) {
+		// Push the trace on to the top of the stack
+		lua_rawgeti(L, -1, 3);
+		// Convert it to a zval
+		MAKE_STD_ZVAL(ztrace);
+		luasandbox_lua_to_zval(ztrace, L, -1, sandbox->current_zval, NULL);
+		// Put it in the exception object
+		zend_update_property(ce, zex, "luaTrace", sizeof("luaTrace")-1, ztrace TSRMLS_CC);
+		zval_ptr_dtor(&ztrace);
+		lua_pop(L, 1);
+	}
+
+	// Initialise standard properties
+	// We would get Zend to do this, but the code for it is wrapped inside some
+	// very inconvenient interfaces (so inconvenient that Zend itself 
+	// duplicates this code in several places).
+	zend_update_property_string(ce, zex, "message", sizeof("message")-1, errorMsg TSRMLS_CC);
+	zend_update_property_long(ce, zex, "code", sizeof("code")-1, status TSRMLS_CC);
+
+	zend_throw_exception_object(zex TSRMLS_CC);
 	lua_pop(L, 1);
 }
 /* }}} */
@@ -883,6 +912,8 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 {
 	// Save the top position
 	int origTop = lua_gettop(L);
+	// Keep track of the stack index where the return values will appear
+	int retIndex = origTop + 2;
 	int status;
 	int cpu_limited = 0;
 	luasandbox_timer_set t;
@@ -896,6 +927,12 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 		lua_settop(L, origTop - 1);
 		RETURN_FALSE;
 	}
+
+	// Push the error function
+	lua_pushcfunction(L, luasandbox_attach_trace);
+
+	// Push the function to be called
+	lua_pushvalue(L, origTop);
 
 	// Push the arguments
 	for (i = 0; i < numArgs; i++) {
@@ -924,7 +961,7 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 
 	// Call the function
 	sandbox->in_lua++;
-	status = lua_pcall(L, numArgs, LUA_MULTRET, 0);
+	status = lua_pcall(L, numArgs, LUA_MULTRET, origTop + 1);
 	sandbox->in_lua--;
 	sandbox->current_zval = old_zval;
 
@@ -939,20 +976,20 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 
 	// Handle normal errors
 	if (status) {
-		luasandbox_handle_error(L, status);
+		luasandbox_handle_error(sandbox, status);
 		lua_settop(L, origTop - 1);
 		RETURN_FALSE;
 	}
 
 	// Calculate the number of results and create an array of that capacity
-	numResults = lua_gettop(L) - origTop + 1;
+	numResults = lua_gettop(L) - retIndex + 1;
 	array_init_size(return_value, numResults);
 
 	// Fill the array with the results
 	for (i = 0; i < numResults; i++) {
 		zval * element;
 		MAKE_STD_ZVAL(element);
-		luasandbox_lua_to_zval(element, L, origTop + i, sandbox_zval, NULL TSRMLS_CC);
+		luasandbox_lua_to_zval(element, L, retIndex + i, sandbox_zval, NULL TSRMLS_CC);
 		zend_hash_next_index_insert(Z_ARRVAL_P(return_value), 
 			(void*)&element,
 			sizeof(zval*), NULL);
