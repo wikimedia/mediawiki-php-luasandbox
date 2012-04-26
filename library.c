@@ -128,7 +128,19 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 	lua_pushcfunction(L, luasandbox_math_randomseed);
 	lua_setfield(L, -2, "randomseed");
 	lua_pop(L, 1);
-	
+
+	// Allow debug.traceback. Equivalent to Lua code:
+	//    debug = {traceback = traceback}
+	// Stack deltas are shown in each comment below
+	lua_pushcfunction(L, luaopen_debug); // +1
+	lua_call(L, 0, 0); // -1
+	lua_createtable(L, 0, 1); // +1
+	lua_getglobal(L, "debug"); // +1
+	lua_getfield(L, -1, "traceback"); // +1
+	lua_setfield(L, -3, "traceback"); // -1
+	lua_pop(L, 1); // -1
+	lua_setglobal(L, "debug"); // -1
+
 	// Install string-related functions
 	luasandbox_install_unicode_functions(L);
 }
