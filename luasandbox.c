@@ -85,6 +85,9 @@ ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_setCPULimit, 0)
 	ZEND_ARG_INFO(0, emergency_limit)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_getCPUUsage, 0)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_callFunction, 0)
 	ZEND_ARG_INFO(0, name)
 	ZEND_ARG_INFO(0, ...)
@@ -118,6 +121,7 @@ const zend_function_entry luasandbox_methods[] = {
 	PHP_ME(LuaSandbox, setMemoryLimit, arginfo_luasandbox_setMemoryLimit, 0)
 	PHP_ME(LuaSandbox, getMemoryUsage, arginfo_luasandbox_getMemoryUsage, 0)
 	PHP_ME(LuaSandbox, setCPULimit, arginfo_luasandbox_setCPULimit, 0)
+	PHP_ME(LuaSandbox, getCPUUsage, arginfo_luasandbox_getCPUUsage, 0)
 	PHP_ME(LuaSandbox, callFunction, arginfo_luasandbox_callFunction, 0)
 	PHP_ME(LuaSandbox, registerLibrary, arginfo_luasandbox_registerLibrary, 0)
 	{NULL, NULL, NULL}
@@ -262,21 +266,24 @@ PHP_MINFO_FUNCTION(luasandbox)
  */
 static zend_object_value luasandbox_new(zend_class_entry *ce TSRMLS_DC)
 {
-	php_luasandbox_obj * intern;
+	php_luasandbox_obj * sandbox;
 	zend_object_value retval;
 
 	// Create the internal object
-	intern = emalloc(sizeof(php_luasandbox_obj));
-	memset(intern, 0, sizeof(php_luasandbox_obj));
-	zend_object_std_init(&intern->std, ce TSRMLS_CC);
-	intern->alloc.memory_limit = (size_t)-1;
+	sandbox = emalloc(sizeof(php_luasandbox_obj));
+	memset(sandbox, 0, sizeof(php_luasandbox_obj));
+	zend_object_std_init(&sandbox->std, ce TSRMLS_CC);
+	sandbox->alloc.memory_limit = (size_t)-1;
 
 	// Initialise the Lua state
-	intern->state = luasandbox_newstate(intern);
+	sandbox->state = luasandbox_newstate(sandbox);
+
+	// Initialise the timer
+	luasandbox_timer_create(&sandbox->timer, sandbox);
 
 	// Put the object into the store
 	retval.handle = zend_objects_store_put(
-		intern,
+		sandbox,
 		(zend_objects_store_dtor_t)zend_objects_destroy_object, 
 		(zend_objects_free_object_storage_t)luasandbox_free_storage, 
 		NULL TSRMLS_CC);
@@ -325,15 +332,14 @@ static lua_State * luasandbox_newstate(php_luasandbox_obj * intern)
  */
 static void luasandbox_free_storage(void *object TSRMLS_DC)
 {
-	php_luasandbox_obj * intern = (php_luasandbox_obj*)object;
+	php_luasandbox_obj * sandbox = (php_luasandbox_obj*)object;
 
-	if (intern->state) {
-		luasandbox_alloc_delete_state(&intern->alloc, intern->state);
-		intern->state = NULL;
-		
-		intern->state = NULL;
+	luasandbox_timer_stop(&sandbox->timer);
+	if (sandbox->state) {
+		luasandbox_alloc_delete_state(&sandbox->alloc, sandbox->state);
+		sandbox->state = NULL;
 	}
-	zend_object_std_dtor(&intern->std);
+	zend_object_std_dtor(&sandbox->std);
 	efree(object);
 }
 /* }}} */
@@ -657,9 +663,9 @@ PHP_METHOD(LuaSandbox, setMemoryLimit)
 
 /** {{{ proto void LuaSandbox::setCPULimit(mixed normal_limit, mixed emergency_limit = false)
  *
- * Set the limit of CPU time (user+system) for LuaSandboxFunction::call()
- * calls. There are two time limits, which are both specified in seconds. Set
- * a time limit to false to disable it.
+ * Set the limit of CPU time (user+system) for all LuaSandboxFunction::call()
+ * calls against this LuaSandbox instance. There are two time limits, which 
+ * are both specified in seconds. Set a time limit to false to disable it.
  *
  * When the "normal" time limit expires, a flag will be set which causes 
  * a LuaSandboxError exception to be thrown when the currently-running Lua 
@@ -671,6 +677,9 @@ PHP_METHOD(LuaSandbox, setMemoryLimit)
  * running, the Lua state is destroyed and then recreated with an empty state. 
  * Any LuaSandboxFunction objects which referred to the old state will stop 
  * working. A LuaSandboxEmergencyTimeout exception is thrown.
+ *
+ * Setting the time limit from a callback while Lua is running causes the timer
+ * to be reset, or started if it was not already running.
  */
 PHP_METHOD(LuaSandbox, setCPULimit)
 {
@@ -678,6 +687,9 @@ PHP_METHOD(LuaSandbox, setCPULimit)
 
 	php_luasandbox_obj * sandbox = (php_luasandbox_obj*) 
 		zend_object_store_get_object(getThis() TSRMLS_CC);
+
+	struct timespec normal = {0, 0};
+	struct timespec emergency = {0, 0};
 
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "Z|Z",
 		&zpp_normal, &zpp_emergency) == FAILURE)
@@ -696,7 +708,7 @@ PHP_METHOD(LuaSandbox, setCPULimit)
 			convert_to_double_ex(zpp_normal);
 		}
 		if (Z_TYPE_PP(zpp_normal) == IS_DOUBLE) {
-			luasandbox_set_timespec(&sandbox->cpu_normal_limit, Z_DVAL_PP(zpp_normal));
+			luasandbox_set_timespec(&normal, Z_DVAL_PP(zpp_normal));
 			sandbox->is_cpu_limited = 1;
 		} else {
 			sandbox->is_cpu_limited = 0;
@@ -707,20 +719,18 @@ PHP_METHOD(LuaSandbox, setCPULimit)
 		|| (Z_TYPE_PP(zpp_emergency) == IS_BOOL && Z_BVAL_PP(zpp_emergency) == 0))
 	{
 		// No emergency limit
-		sandbox->cpu_emergency_limit.tv_sec = 0;
-		sandbox->cpu_emergency_limit.tv_nsec = 0;
 	} else {
 		convert_scalar_to_number_ex(zpp_emergency);
 		if (Z_TYPE_PP(zpp_emergency) == IS_LONG) {
 			convert_to_double_ex(zpp_emergency);
 		}
 		if (Z_TYPE_PP(zpp_normal) == IS_DOUBLE) {
-			luasandbox_set_timespec(&sandbox->cpu_emergency_limit, Z_DVAL_PP(zpp_emergency));
-		} else {
-			sandbox->cpu_emergency_limit.tv_sec = 0;
-			sandbox->cpu_emergency_limit.tv_nsec = 0;
+			luasandbox_set_timespec(&emergency, Z_DVAL_PP(zpp_emergency));
 		}
 	}
+
+	// Set the timer
+	luasandbox_timer_set_limits(&sandbox->timer, &normal, &emergency);
 }
 /* }}} */
 
@@ -745,6 +755,26 @@ static void luasandbox_set_timespec(struct timespec * dest, double source)
 	}
 }
 
+/* }}} */
+
+/** {{{ proto float LuaSandbox::getCPUUsage()
+ *
+ * Get the amount of CPU used by this LuaSandbox instance, including any PHP 
+ * functions called by Lua.
+ */
+PHP_METHOD(LuaSandbox, getCPUUsage)
+{
+	struct timespec ts;
+	php_luasandbox_obj * sandbox = (php_luasandbox_obj*)
+		zend_object_store_get_object(getThis() TSRMLS_CC);
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "") == FAILURE) {
+		RETURN_FALSE;
+	}
+
+	luasandbox_timer_get_usage(&sandbox->timer, &ts);
+	RETURN_DOUBLE(ts.tv_sec + 1e-9 * ts.tv_nsec);
+}
 /* }}} */
 
 /** {{{ LuaSandbox::getMemoryUsage */
@@ -915,8 +945,7 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 	// Keep track of the stack index where the return values will appear
 	int retIndex = origTop + 2;
 	int status;
-	int cpu_limited = 0;
-	luasandbox_timer_set t;
+	int timer_started = 0;
 	int i, numResults;
 	zval * old_zval;
 
@@ -945,13 +974,17 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 	}
 
 	// Initialise the CPU limit timer
-	if (!sandbox->in_lua && sandbox->is_cpu_limited) {
-		cpu_limited = 1;
+	if (!sandbox->in_lua) {
+		if (luasandbox_timer_is_expired(&sandbox->timer)) {
+			zend_throw_exception(luasandboxtimeouterror_ce, luasandbox_timeout_message, LUA_ERRRUN);
+			lua_settop(L, origTop - 1);
+			RETURN_FALSE;
+		}
+		timer_started = 1;
 		if (!LUASANDBOX_G(signal_handler_installed)) {
 			luasandbox_timer_install_handler(&LUASANDBOX_G(old_handler));
 		}
-		luasandbox_timer_start(&t, sandbox, &sandbox->cpu_normal_limit, 
-			&sandbox->cpu_emergency_limit);
+		luasandbox_timer_start(&sandbox->timer);
 	}
 
 	// Save the current zval for later use in luasandbox_call_php. Restore it 
@@ -966,8 +999,8 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 	sandbox->current_zval = old_zval;
 
 	// Stop the timer
-	if (cpu_limited) {
-		luasandbox_timer_stop(&t);
+	if (timer_started) {
+		luasandbox_timer_stop(&sandbox->timer);
 	}
 	if (sandbox->emergency_timed_out) {
 		luasandbox_handle_emergency_timeout(sandbox);

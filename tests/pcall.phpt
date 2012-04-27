@@ -2,7 +2,6 @@
 pcall() catching various errors
 --FILE--
 <?php
-$sandbox = new LuaSandbox;
 $lua = <<<LUA
 	function pcall_test(f)
 		local status, msg
@@ -24,12 +23,13 @@ $tests = array(
 	'Out of memory' => 'string.rep("x", 1000000)'
 );
 		
-$sandbox->loadString( $lua )->call();
-$sandbox->setCPULimit( 0.25 );
-$sandbox->setMemoryLimit( 100000 );
 
 foreach ( $tests as $desc => $code ) {
 	echo "$desc: ";
+	$sandbox = new LuaSandbox;
+	$sandbox->loadString( $lua )->call();
+	$sandbox->setCPULimit( 0.25 );
+	$sandbox->setMemoryLimit( 100000 );
 	try {
 		print implode("\n", 
 			$sandbox->callFunction( 'pcall_test', $sandbox->loadString( $code ) ) ) . "\n";

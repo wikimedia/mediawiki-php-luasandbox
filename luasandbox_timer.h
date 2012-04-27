@@ -15,9 +15,11 @@
 #define LUASANDBOX_SIGNAL SIGUSR2
 #endif
 
+struct _php_luasandbox_obj;
+
 typedef struct {
 	int emergency;
-	php_luasandbox_obj * sandbox;
+	struct _php_luasandbox_obj * sandbox;
 } luasandbox_timer_callback_data;
 
 typedef struct {
@@ -28,30 +30,35 @@ typedef struct {
 typedef struct {
 	luasandbox_timer normal_timer;
 	luasandbox_timer emergency_timer;
-	int use_emergency;
-	php_luasandbox_obj * sandbox;
+	struct timespec normal_limit, normal_remaining;
+	struct timespec emergency_limit, emergency_remaining;
+	struct timespec usage_start, usage;
+	struct _php_luasandbox_obj * sandbox;
+	int is_running;
+	int normal_running;
+	int emergency_running;
 } luasandbox_timer_set;
 
 
-#else
+#else /*CLOCK_REALTIME*/
 
 #define LUASANDBOX_NO_CLOCK
 
 typedef struct {} luasandbox_timer;
 typedef struct {} luasandbox_timer_set;
-void timer_settime();
-void timer_delete();
-void timer_create();
 
-#endif
+#endif /*CLOCK_REALTIME*/
 
 void luasandbox_timer_install_handler(struct sigaction * oldact);
 void luasandbox_timer_remove_handler(struct sigaction * oldact);
-void luasandbox_timer_start(luasandbox_timer_set * lts, 
-		php_luasandbox_obj * sandbox,
-		struct timespec * normal_timeout,
+void luasandbox_timer_create(luasandbox_timer_set * lts, struct _php_luasandbox_obj * sandbox);
+void luasandbox_timer_set_limits(luasandbox_timer_set * lts,
+		struct timespec * normal_timeout, 
 		struct timespec * emergency_timeout);
+void luasandbox_timer_start(luasandbox_timer_set * lts);
 void luasandbox_timer_stop(luasandbox_timer_set * lts);
+void luasandbox_timer_get_usage(luasandbox_timer_set * lts, struct timespec * ts);
+void luasandbox_timer_timeout_error(lua_State *L);
+int luasandbox_timer_is_expired(luasandbox_timer_set * lts);
 
-
-#endif
+#endif /*LUASANDBOX_TIMER_H*/

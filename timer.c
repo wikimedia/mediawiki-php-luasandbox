@@ -11,27 +11,71 @@
 #include "php_luasandbox.h"
 #include "luasandbox_timer.h"
 
+char luasandbox_timeout_message[] = "The maximum execution time for this script was exceeded";
+
 #ifdef LUASANDBOX_NO_CLOCK
 
 void luasandbox_timer_install_handler(struct sigaction * oldact) {}
 void luasandbox_timer_remove_handler(struct sigaction * oldact) {}
-void luasandbox_timer_start(luasandbox_timer_set * lts,
-		php_luasandbox_obj * sandbox,
-		struct timespec * normal_timeout,
+void luasandbox_timer_create(luasandbox_timer_set * lts,
+		php_luasandbox_obj * sandbox) {}
+void luasandbox_timer_set_limits(luasandbox_timer_set * lts,
+		struct timespec * normal_timeout, 
 		struct timespec * emergency_timeout) {}
+void luasandbox_timer_start(luasandbox_timer_set * lts) {}
 void luasandbox_timer_stop(luasandbox_timer_set * lts) {}
+
+void luasandbox_timer_get_usage(luasandbox_timer_set * lts, struct timespec * ts) {
+	ts->tv_sec = ts->tv_nsec = 0;
+}
 void luasandbox_timer_timeout_error(lua_State *L) {}
-char luasandbox_timeout_message[];
+int luasandbox_is_expired(luasandbox_timer_set * lts) {
+	return 0;
+}
+
 
 #else
 
 static void luasandbox_timer_handle(int signo, siginfo_t * info, void * context);
-static void luasandbox_timer_create(luasandbox_timer * lt, php_luasandbox_obj * sandbox, 
+static void luasandbox_timer_create_one(luasandbox_timer * lt, php_luasandbox_obj * sandbox, 
 		int emergency);
 static void luasandbox_timer_timeout_hook(lua_State *L, lua_Debug *ar);
-static void luasandbox_timer_settime(luasandbox_timer * lt, struct timespec * ts);
+static void luasandbox_timer_set_one_time(luasandbox_timer * lt, struct timespec * ts);
+static void luasandbox_timer_stop_one(luasandbox_timer * lt, struct timespec * remaining);
+static void luasandbox_update_usage(luasandbox_timer_set * lts);
 
-char luasandbox_timeout_message[] = "The maximum execution time for this script was exceeded";
+static inline void luasandbox_timer_zero(struct timespec * ts)
+{
+	ts->tv_sec = ts->tv_nsec = 0;
+}
+
+static inline int luasandbox_timer_is_zero(struct timespec * ts)
+{
+	return ts->tv_sec == 0 && ts->tv_nsec == 0;
+}
+
+static inline void luasandbox_timer_subtract(
+		struct timespec * a, const struct timespec * b)
+{
+	a->tv_sec -= b->tv_sec;
+	if (a->tv_nsec < b->tv_nsec) {
+		a->tv_sec--;
+		a->tv_nsec += 1000000000L - b->tv_nsec;
+	} else {
+		a->tv_nsec -= b->tv_nsec;
+	}
+}
+
+static inline void luasandbox_timer_add(
+		struct timespec * a, const struct timespec * b)
+{
+	a->tv_sec += b->tv_sec;
+	a->tv_nsec += b->tv_nsec;
+	if (a->tv_nsec > 1000000000L) {
+		a->tv_nsec -= 1000000000L;
+		a->tv_sec++;
+	}
+}
 
 void luasandbox_timer_install_handler(struct sigaction * oldact)
 {
@@ -100,26 +144,64 @@ void luasandbox_timer_timeout_error(lua_State *L)
 	lua_error(L);
 }
 
-void luasandbox_timer_start(luasandbox_timer_set * lts, 
-		php_luasandbox_obj * sandbox,
-		struct timespec * normal_timeout,
+void luasandbox_timer_create(luasandbox_timer_set * lts, php_luasandbox_obj * sandbox)
+{
+	luasandbox_timer_zero(&lts->usage);
+	luasandbox_timer_zero(&lts->normal_limit);
+	luasandbox_timer_zero(&lts->normal_remaining);
+	luasandbox_timer_zero(&lts->emergency_limit);
+	luasandbox_timer_zero(&lts->emergency_remaining);
+	lts->is_running = 0;
+	lts->normal_running = 0;
+	lts->emergency_running = 0;
+	lts->sandbox = sandbox;
+}
+
+void luasandbox_timer_set_limits(luasandbox_timer_set * lts,
+		struct timespec * normal_timeout, 
 		struct timespec * emergency_timeout)
 {
-	// Create normal timer
-	luasandbox_timer_create(&lts->normal_timer, sandbox, 0);
-	luasandbox_timer_settime(&lts->normal_timer, normal_timeout);
-
-	// Create emergency timer if requested
-	if (emergency_timeout->tv_sec || emergency_timeout->tv_nsec) {
-		lts->use_emergency = 1;
-		luasandbox_timer_create(&lts->emergency_timer, sandbox, 1);
-		luasandbox_timer_settime(&lts->emergency_timer, emergency_timeout);
-	} else {
-		lts->use_emergency = 0;
+	int was_running = 0;
+	if (lts->is_running) {
+		was_running = 1;
+		lusandbox_timer_stop(lts);
+	}
+	lts->normal_remaining = lts->normal_limit = *normal_timeout;
+	lts->emergency_remaining = lts->emergency_limit = *emergency_timeout;
+	if (was_running) {
+		luasandbox_timer_start(lts);
 	}
 }
 
-static void luasandbox_timer_create(luasandbox_timer * lt, php_luasandbox_obj * sandbox, 
+void luasandbox_timer_start(luasandbox_timer_set * lts)
+{
+	if (lts->is_running) {
+		// Already running
+		return;
+	}
+	lts->is_running = 1;
+	// Initialise usage timer
+	clock_gettime(LUASANDBOX_CLOCK_ID, &lts->usage_start);
+
+	// Create normal timer if requested
+	if (!luasandbox_timer_is_zero(&lts->normal_remaining)) {
+		lts->normal_running = 1;
+		luasandbox_timer_create_one(&lts->normal_timer, lts->sandbox, 0);
+		luasandbox_timer_set_one_time(&lts->normal_timer, &lts->normal_remaining);
+	} else {
+		lts->normal_running = 0;
+	}
+	// Create emergency timer if requested
+	if (!luasandbox_timer_is_zero(&lts->emergency_remaining)) {
+		lts->emergency_running = 1;
+		luasandbox_timer_create_one(&lts->emergency_timer, lts->sandbox, 1);
+		luasandbox_timer_set_one_time(&lts->emergency_timer, &lts->emergency_remaining);
+	} else {
+		lts->emergency_running = 0;
+	}
+}
+
+static void luasandbox_timer_create_one(luasandbox_timer * lt, php_luasandbox_obj * sandbox, 
 		int emergency)
 {
 	struct sigevent ev;
@@ -134,25 +216,84 @@ static void luasandbox_timer_create(luasandbox_timer * lt, php_luasandbox_obj * 
 	timer_create(LUASANDBOX_CLOCK_ID, &ev, &lt->timer);
 }
 
-static void luasandbox_timer_settime(luasandbox_timer * lt, struct timespec * ts)
+static void luasandbox_timer_set_one_time(luasandbox_timer * lt, struct timespec * ts)
 {
 	struct itimerspec its;
-	its.it_interval.tv_sec = 0;
-	its.it_interval.tv_nsec = 0;
+	luasandbox_timer_zero(&its.it_interval);
 	its.it_value = *ts;
 	timer_settime(lt->timer, 0, &its, NULL);
 }
 
+
 void luasandbox_timer_stop(luasandbox_timer_set * lts)
 {
-	struct timespec zero = {0, 0};
-	if (lts->use_emergency) {
-		luasandbox_timer_settime(&lts->emergency_timer, &zero);
-		timer_delete(lts->emergency_timer.timer);
+	struct timespec usage;
+
+	if (lts->is_running) {
+		lts->is_running = 0;
+	} else {
+		return;
 	}
 
-	luasandbox_timer_settime(&lts->normal_timer, &zero);
-	timer_delete(lts->normal_timer.timer);
+	// Stop the interval timers and save the time remaining
+	if (lts->emergency_running) {
+		luasandbox_timer_stop_one(&lts->emergency_timer, &lts->emergency_remaining);
+		lts->emergency_running = 0;
+	}
+	if (lts->normal_running) {
+		luasandbox_timer_stop_one(&lts->normal_timer, &lts->normal_remaining);
+		lts->normal_running = 0;
+	}
+
+	// Update the usage
+	luasandbox_update_usage(lts);
+	clock_gettime(LUASANDBOX_CLOCK_ID, &usage);
+	luasandbox_timer_subtract(&usage, &lts->usage_start);
+	luasandbox_timer_add(&lts->usage, &usage);
 }
 
+
+static void luasandbox_timer_stop_one(luasandbox_timer * lt, struct timespec * remaining)
+{
+	static struct timespec zero = {0, 0};
+	struct itimerspec its;
+	timer_gettime(lt->timer, &its);
+	remaining->tv_sec = its.it_value.tv_sec;
+	remaining->tv_nsec = its.it_value.tv_nsec;
+	luasandbox_timer_set_one_time(lt, &zero);
+	timer_delete(lt->timer);
+}
+
+void luasandbox_timer_get_usage(luasandbox_timer_set * lts, struct timespec * ts)
+{
+	if (lts->is_running) {
+		luasandbox_update_usage(lts);
+	}
+	*ts = lts->usage;
+}
+
+int luasandbox_timer_is_expired(luasandbox_timer_set * lts)
+{
+	if (!luasandbox_timer_is_zero(&lts->normal_limit)) {
+		if (luasandbox_timer_is_zero(&lts->normal_remaining)) {
+			return 1;
+		}
+	}
+	if (!luasandbox_timer_is_zero(&lts->emergency_limit)) {
+		if (luasandbox_timer_is_zero(&lts->emergency_remaining)) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static void luasandbox_update_usage(luasandbox_timer_set * lts)
+{
+	struct timespec current, usage;
+	clock_gettime(LUASANDBOX_CLOCK_ID, &current);
+	usage = current;
+	luasandbox_timer_subtract(&usage, &lts->usage_start);
+	luasandbox_timer_add(&lts->usage, &usage);
+	lts->usage_start = current;
+}
 #endif

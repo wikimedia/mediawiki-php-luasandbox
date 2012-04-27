@@ -4,6 +4,7 @@
 
 #include <lua.h>
 #include <signal.h>
+#include "luasandbox_timer.h"
 
 /* alloc.c */
 
@@ -47,6 +48,7 @@ PHP_METHOD(LuaSandbox, loadBinary);
 PHP_METHOD(LuaSandbox, setMemoryLimit);
 PHP_METHOD(LuaSandbox, getMemoryUsage);
 PHP_METHOD(LuaSandbox, setCPULimit);
+PHP_METHOD(LuaSandbox, getCPUUsage);
 PHP_METHOD(LuaSandbox, callFunction);
 PHP_METHOD(LuaSandbox, registerLibrary);
 
@@ -76,8 +78,7 @@ struct _php_luasandbox_obj {
 	volatile int timed_out;
 	volatile int emergency_timed_out;
 	int is_cpu_limited;
-	struct timespec cpu_normal_limit;
-	struct timespec cpu_emergency_limit;
+	luasandbox_timer_set timer;
 	int function_index;
 	unsigned int random_seed;
 };
@@ -92,7 +93,6 @@ typedef struct _php_luasandboxfunction_obj php_luasandboxfunction_obj;
 
 
 php_luasandbox_obj * luasandbox_get_php_obj(lua_State * L);
-void luasandbox_timer_timeout_error(lua_State *L);
 
 /** {{{ luasandbox_enter_php
  *
