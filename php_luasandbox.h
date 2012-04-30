@@ -41,6 +41,7 @@ PHP_METHOD(LuaSandbox, loadString);
 PHP_METHOD(LuaSandbox, loadBinary);
 PHP_METHOD(LuaSandbox, setMemoryLimit);
 PHP_METHOD(LuaSandbox, getMemoryUsage);
+PHP_METHOD(LuaSandbox, getPeakMemoryUsage);
 PHP_METHOD(LuaSandbox, setCPULimit);
 PHP_METHOD(LuaSandbox, getCPUUsage);
 PHP_METHOD(LuaSandbox, callFunction);

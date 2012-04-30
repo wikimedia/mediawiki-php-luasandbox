@@ -82,6 +82,9 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_getMemoryUsage, 0)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_getPeakMemoryUsage, 0)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_setCPULimit, 0)
 	ZEND_ARG_INFO(0, normal_limit)
 	ZEND_ARG_INFO(0, emergency_limit)
@@ -122,6 +125,7 @@ const zend_function_entry luasandbox_methods[] = {
 	PHP_ME(LuaSandbox, loadBinary, arginfo_luasandbox_loadBinary, 0)
 	PHP_ME(LuaSandbox, setMemoryLimit, arginfo_luasandbox_setMemoryLimit, 0)
 	PHP_ME(LuaSandbox, getMemoryUsage, arginfo_luasandbox_getMemoryUsage, 0)
+	PHP_ME(LuaSandbox, getPeakMemoryUsage, arginfo_luasandbox_getPeakMemoryUsage, 0)
 	PHP_ME(LuaSandbox, setCPULimit, arginfo_luasandbox_setCPULimit, 0)
 	PHP_ME(LuaSandbox, getCPUUsage, arginfo_luasandbox_getCPUUsage, 0)
 	PHP_ME(LuaSandbox, callFunction, arginfo_luasandbox_callFunction, 0)
@@ -809,6 +813,20 @@ PHP_METHOD(LuaSandbox, getMemoryUsage)
 	}
 
 	RETURN_LONG(sandbox->alloc.memory_usage);
+}
+/* }}} */
+
+/** {{{ LuaSandbox::getPeakMemoryUsage */
+PHP_METHOD(LuaSandbox, getPeakMemoryUsage)
+{
+	php_luasandbox_obj * sandbox = (php_luasandbox_obj*)
+		zend_object_store_get_object(getThis() TSRMLS_CC);
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "") == FAILURE) {
+		RETURN_FALSE;
+	}
+
+	RETURN_LONG(sandbox->alloc.peak_memory_usage);
 }
 /* }}} */
 

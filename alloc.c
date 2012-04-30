@@ -72,6 +72,9 @@ static inline int luasandbox_update_memory_accounting(php_luasandbox_alloc * all
 	}
 
 	alloc->memory_usage += nsize - osize;
+	if (alloc->memory_usage > alloc->peak_memory_usage) {
+		alloc->peak_memory_usage = alloc->memory_usage;
+	}
 	return 1;
 }
 /* }}} */

@@ -47,6 +47,7 @@ typedef struct {
 	void * old_alloc_ud;
 	size_t memory_limit;
 	size_t memory_usage;
+	size_t peak_memory_usage;
 } php_luasandbox_alloc;
 
 struct _php_luasandbox_obj {
