@@ -1,6 +1,8 @@
 #ifndef LUASANDBOX_TIMER_H
 #define LUASANDBOX_TIMER_H
 
+#include "luasandbox_types.h"
+
 #ifdef CLOCK_REALTIME
 
 #ifdef CLOCK_PROCESS_CPUTIME_ID
@@ -10,42 +12,15 @@
 #endif
 
 #ifdef SIGRTMIN
-#define LUASANDBOX_SIGNAL (SIGRTMIN+1)
+#define LUASANDBOX_SIGNAL (SIGRTMIN+5)
 #else
 #define LUASANDBOX_SIGNAL SIGUSR2
 #endif
-
-struct _php_luasandbox_obj;
-
-typedef struct {
-	int emergency;
-	struct _php_luasandbox_obj * sandbox;
-} luasandbox_timer_callback_data;
-
-typedef struct {
-	timer_t timer;
-	luasandbox_timer_callback_data cbdata;
-} luasandbox_timer;
-
-typedef struct {
-	luasandbox_timer normal_timer;
-	luasandbox_timer emergency_timer;
-	struct timespec normal_limit, normal_remaining;
-	struct timespec emergency_limit, emergency_remaining;
-	struct timespec usage_start, usage;
-	struct _php_luasandbox_obj * sandbox;
-	int is_running;
-	int normal_running;
-	int emergency_running;
-} luasandbox_timer_set;
 
 
 #else /*CLOCK_REALTIME*/
 
 #define LUASANDBOX_NO_CLOCK
-
-typedef struct {} luasandbox_timer;
-typedef struct {} luasandbox_timer_set;
 
 #endif /*CLOCK_REALTIME*/
 

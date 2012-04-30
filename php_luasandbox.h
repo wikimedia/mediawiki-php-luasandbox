@@ -4,20 +4,14 @@
 
 #include <lua.h>
 #include <signal.h>
+
+#include "luasandbox_types.h"
 #include "luasandbox_timer.h"
 
 /* alloc.c */
 
-typedef struct {
-	lua_Alloc old_alloc;
-	void * old_alloc_ud;
-	size_t memory_limit;
-	size_t memory_usage;
-} php_luasandbox_alloc;
 
-struct _php_luasandbox_obj;
-
-lua_State * luasandbox_alloc_new_state(php_luasandbox_alloc * alloc, struct _php_luasandbox_obj * sandbox);
+lua_State * luasandbox_alloc_new_state(php_luasandbox_alloc * alloc, php_luasandbox_obj * sandbox);
 void luasandbox_alloc_delete_state(php_luasandbox_alloc * alloc, lua_State * L);
 
 /* luasandbox.c */
@@ -56,40 +50,11 @@ PHP_METHOD(LuaSandboxFunction, __construct);
 PHP_METHOD(LuaSandboxFunction, call);
 PHP_METHOD(LuaSandboxFunction, dump);
 
-ZEND_BEGIN_MODULE_GLOBALS(luasandbox)
-	int signal_handler_installed;
-	struct sigaction old_handler;
-	HashTable * allowed_globals;
-ZEND_END_MODULE_GLOBALS(luasandbox)
-
 #ifdef ZTS
 #define LUASANDBOX_G(v) TSRMG(luasandbox_globals_id, zend_luasandbox_globals *, v)
 #else
 #define LUASANDBOX_G(v) (luasandbox_globals.v)
 #endif
-
-struct _php_luasandbox_obj {
-	zend_object std;
-	lua_State * state;
-	php_luasandbox_alloc alloc;
-	int in_php;
-	int in_lua;
-	zval * current_zval; /* The zval for the LuaSandbox which is currently executing Lua code */
-	volatile int timed_out;
-	volatile int emergency_timed_out;
-	int is_cpu_limited;
-	luasandbox_timer_set timer;
-	int function_index;
-	unsigned int random_seed;
-};
-typedef struct _php_luasandbox_obj php_luasandbox_obj;
-
-struct _php_luasandboxfunction_obj {
-	zend_object std;
-	zval * sandbox;
-	int index;
-};
-typedef struct _php_luasandboxfunction_obj php_luasandboxfunction_obj;
 
 
 php_luasandbox_obj * luasandbox_get_php_obj(lua_State * L);
@@ -128,7 +93,7 @@ static inline void luasandbox_leave_php(lua_State * L, php_luasandbox_obj * inte
 /* library.c */
 
 void luasandbox_lib_register(lua_State * L TSRMLS_DC);
-void luasandbox_lib_shutdown(TSRMLS_D);
+void luasandbox_lib_destroy_globals(zend_luasandbox_globals * g TSRMLS_DC);
 
 /* data_conversion.c */
 

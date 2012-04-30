@@ -73,6 +73,7 @@ int luasandbox_push_zval(lua_State * L, zval * z)
 			}
 			break;
 		case IS_OBJECT: {
+			TSRMLS_FETCH();
 			zend_class_entry * objce;
 			
 			objce = Z_OBJCE_P(z);
@@ -159,6 +160,7 @@ static int luasandbox_push_hashtable(lua_State * L, HashTable * ht)
 		return 1;
 	}
 	if (ht->nApplyCount) {
+		TSRMLS_FETCH();
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "recursion detected");
 		return 0;
 	}
@@ -278,7 +280,7 @@ void luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 			int func_index;
 			php_luasandboxfunction_obj * func_obj;
 			php_luasandbox_obj * sandbox = (php_luasandbox_obj*)
-				zend_object_store_get_object(sandbox_zval);
+				zend_object_store_get_object(sandbox_zval TSRMLS_CC);
 
 			// Normalise the input index so that we can push without invalidating it.
 			if (index < 0) {
@@ -302,7 +304,7 @@ void luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 
 			// Create a LuaSandboxFunction object to hold a reference to the function
 			object_init_ex(z, luasandboxfunction_ce);
-			func_obj = (php_luasandboxfunction_obj*)zend_object_store_get_object(z);
+			func_obj = (php_luasandboxfunction_obj*)zend_object_store_get_object(z TSRMLS_CC);
 			func_obj->index = func_index;
 			func_obj->sandbox = sandbox_zval;
 			Z_ADDREF_P(sandbox_zval);

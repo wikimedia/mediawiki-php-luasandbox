@@ -98,7 +98,7 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 			continue;
 		}
 		key = lua_tolstring(L, -1, &key_len);
-		if (zend_hash_find(luasandbox_lib_get_allowed_globals(), 
+		if (zend_hash_find(luasandbox_lib_get_allowed_globals(TSRMLS_C), 
 			(char*)key, key_len + 1, &data) == FAILURE) 
 		{
 			// Not allowed, delete it
@@ -146,12 +146,12 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 }
 /* }}} */
 
-/** {{{ luasandbox_lib_shutdown */
-void luasandbox_lib_shutdown(TSRMLS_D)
+/** {{{ luasandbox_lib_destroy_globals */
+void luasandbox_lib_destroy_globals(zend_luasandbox_globals * g TSRMLS_DC)
 {
-	if (LUASANDBOX_G(allowed_globals)) {
-		zend_hash_destroy(LUASANDBOX_G(allowed_globals));
-		pefree(LUASANDBOX_G(allowed_globals), 1);
+	if (g->allowed_globals) {
+		zend_hash_destroy(g->allowed_globals);
+		pefree(g->allowed_globals, 1);
 	}
 }
 /* }}} */

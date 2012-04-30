@@ -206,6 +206,9 @@ static void luasandbox_timer_create_one(luasandbox_timer * lt, php_luasandbox_ob
 {
 	struct sigevent ev;
 
+	// Make valgrind happy
+	memset(&ev, 0, sizeof(ev));
+
 	lt->cbdata.emergency = emergency;
 	lt->cbdata.sandbox = sandbox;
 	

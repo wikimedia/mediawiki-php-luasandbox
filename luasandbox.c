@@ -22,10 +22,12 @@
 		RETURN_FALSE; \
 	}
 
+static PHP_GINIT_FUNCTION(luasandbox);
+static PHP_GSHUTDOWN_FUNCTION(luasandbox);
 static zend_object_value luasandbox_new(zend_class_entry *ce TSRMLS_DC);
-static lua_State * luasandbox_newstate(php_luasandbox_obj * intern);
+static lua_State * luasandbox_newstate(php_luasandbox_obj * intern TSRMLS_DC);
 static void luasandbox_free_storage(void *object TSRMLS_DC);
-static zend_object_value luasandboxfunction_new(zend_class_entry *ce TSRMLS_CC);
+static zend_object_value luasandboxfunction_new(zend_class_entry *ce TSRMLS_DC);
 static void luasandboxfunction_free_storage(void *object TSRMLS_DC);
 static void luasandboxfunction_destroy(void *object, zend_object_handle handle TSRMLS_DC);
 static int luasandbox_panic(lua_State * L);
@@ -39,8 +41,8 @@ static int luasandbox_function_init(zval * this_ptr, php_luasandboxfunction_obj 
 static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, 
 	php_luasandbox_obj * sandbox,
 	zval *** args, zend_uint numArgs, zval * return_value TSRMLS_DC);
-static void luasandbox_handle_error(php_luasandbox_obj * sandbox, int status);
-static void luasandbox_handle_emergency_timeout(php_luasandbox_obj * sandbox);
+static void luasandbox_handle_error(php_luasandbox_obj * sandbox, int status TSRMLS_DC);
+static void luasandbox_handle_emergency_timeout(php_luasandbox_obj * sandbox TSRMLS_DC);
 static int luasandbox_call_php(lua_State * L);
 static int luasandbox_dump_writer(lua_State * L, const void * p, size_t sz, void * ud);
 static zend_bool luasandbox_instanceof(
@@ -154,10 +156,12 @@ zend_module_entry luasandbox_module_entry = {
 	NULL, /* RINIT */
 	PHP_RSHUTDOWN(luasandbox), /* RSHUTDOWN */
 	PHP_MINFO(luasandbox),
-#if ZEND_MODULE_API_NO >= 20010901
 	"0.1",
-#endif
-	STANDARD_MODULE_PROPERTIES
+	PHP_MODULE_GLOBALS(luasandbox),
+	PHP_GINIT(luasandbox),
+	PHP_GSHUTDOWN(luasandbox),
+	NULL, /* post deactivate */
+	STANDARD_MODULE_PROPERTIES_EX
 };
 /* }}} */
 
@@ -211,13 +215,13 @@ PHP_MINIT_FUNCTION(luasandbox)
 		&ce, luasandboxfatalerror_ce, NULL TSRMLS_CC);
 
 	zend_declare_class_constant_long(luasandboxerror_ce, 
-		"RUN", sizeof("RUN"), LUA_ERRRUN);
+		"RUN", sizeof("RUN"), LUA_ERRRUN TSRMLS_CC);
 	zend_declare_class_constant_long(luasandboxerror_ce,
-		"SYNTAX", sizeof("SYNTAX"), LUA_ERRSYNTAX);
+		"SYNTAX", sizeof("SYNTAX"), LUA_ERRSYNTAX TSRMLS_CC);
 	zend_declare_class_constant_long(luasandboxerror_ce,
-		"MEM", sizeof("MEM"), LUA_ERRMEM);
+		"MEM", sizeof("MEM"), LUA_ERRMEM TSRMLS_CC);
 	zend_declare_class_constant_long(luasandboxerror_ce,
-		"ERR", sizeof("ERR"), LUA_ERRERR);
+		"ERR", sizeof("ERR"), LUA_ERRERR TSRMLS_CC);
 
 	INIT_CLASS_ENTRY(ce, "LuaSandboxPlaceholder", luasandbox_empty_methods);
 	luasandboxplaceholder_ce = zend_register_internal_class(&ce TSRMLS_CC);
@@ -225,9 +229,22 @@ PHP_MINIT_FUNCTION(luasandbox)
 	INIT_CLASS_ENTRY(ce, "LuaSandboxFunction", luasandboxfunction_methods);
 	luasandboxfunction_ce = zend_register_internal_class(&ce TSRMLS_CC);
 	luasandboxfunction_ce->create_object = luasandboxfunction_new;
-	
-	LUASANDBOX_G(allowed_globals) = NULL;
+
 	return SUCCESS;
+}
+/* }}} */
+
+/** {{{ luasandbox_init_globals */
+static PHP_GINIT_FUNCTION(luasandbox)
+{
+	memset(luasandbox_globals, 0, sizeof(*luasandbox_globals));
+}
+/* }}} */
+
+/** {{{ luasandbox_destroy_globals */
+static PHP_GSHUTDOWN_FUNCTION(luasandbox)
+{
+	luasandbox_lib_destroy_globals(luasandbox_globals TSRMLS_CC);
 }
 /* }}} */
 
@@ -235,7 +252,9 @@ PHP_MINIT_FUNCTION(luasandbox)
  */
 PHP_MSHUTDOWN_FUNCTION(luasandbox)
 {
-	luasandbox_lib_shutdown(TSRMLS_C);
+#ifndef ZTS
+	luasandbox_lib_destroy_globals(&luasandbox_globals TSRMLS_CC);
+#endif
 	return SUCCESS;
 }
 /* }}} */
@@ -245,6 +264,7 @@ PHP_RSHUTDOWN_FUNCTION(luasandbox)
 {
 	if (LUASANDBOX_G(signal_handler_installed)) {
 		luasandbox_timer_remove_handler(&LUASANDBOX_G(old_handler));
+		LUASANDBOX_G(signal_handler_installed) = 0;
 	}
 	return SUCCESS;
 }
@@ -276,7 +296,7 @@ static zend_object_value luasandbox_new(zend_class_entry *ce TSRMLS_DC)
 	sandbox->alloc.memory_limit = (size_t)-1;
 
 	// Initialise the Lua state
-	sandbox->state = luasandbox_newstate(sandbox);
+	sandbox->state = luasandbox_newstate(sandbox TSRMLS_CC);
 
 	// Initialise the timer
 	luasandbox_timer_create(&sandbox->timer, sandbox);
@@ -297,7 +317,7 @@ static zend_object_value luasandbox_new(zend_class_entry *ce TSRMLS_DC)
  * Create a new lua_State which is suitable for running sandboxed scripts in.
  * Initialise libraries and any necessary registry entries.
  */
-static lua_State * luasandbox_newstate(php_luasandbox_obj * intern) 
+static lua_State * luasandbox_newstate(php_luasandbox_obj * intern TSRMLS_DC) 
 {
 	lua_State * L = luasandbox_alloc_new_state(&intern->alloc, intern);
 
@@ -339,7 +359,7 @@ static void luasandbox_free_storage(void *object TSRMLS_DC)
 		luasandbox_alloc_delete_state(&sandbox->alloc, sandbox->state);
 		sandbox->state = NULL;
 	}
-	zend_object_std_dtor(&sandbox->std);
+	zend_object_std_dtor(&sandbox->std TSRMLS_CC);
 	efree(object);
 }
 /* }}} */
@@ -348,7 +368,7 @@ static void luasandbox_free_storage(void *object TSRMLS_DC)
  *
  * "new" handler for the LuaSandboxFunction class.
  */
-static zend_object_value luasandboxfunction_new(zend_class_entry *ce TSRMLS_CC)
+static zend_object_value luasandboxfunction_new(zend_class_entry *ce TSRMLS_DC)
 {
 	php_luasandboxfunction_obj * intern;
 	zend_object_value retval;
@@ -406,7 +426,7 @@ static void luasandboxfunction_destroy(void *object, zend_object_handle handle T
 static void luasandboxfunction_free_storage(void *object TSRMLS_DC)
 {
 	php_luasandboxfunction_obj * func = (php_luasandboxfunction_obj*)object;
-	zend_object_std_dtor(&func->std);
+	zend_object_std_dtor(&func->std TSRMLS_CC);
 	efree(object);
 }
 /* }}} */
@@ -429,6 +449,7 @@ static void luasandboxfunction_free_storage(void *object TSRMLS_DC)
  */
 static int luasandbox_panic(lua_State * L)
 {
+	TSRMLS_FETCH();
 	php_error_docref(NULL TSRMLS_CC, E_ERROR,
 		"PANIC: unprotected error in call to Lua API (%s)",
 		luasandbox_error_to_string(L, -1));
@@ -504,7 +525,7 @@ static void luasandbox_load_helper(int binary, INTERNAL_FUNCTION_PARAMETERS)
 	// Parse the string into a function on the stack
 	status = luaL_loadbuffer(L, code, codeLength, chunkName);
 	if (status != 0) {
-		luasandbox_handle_error(sandbox, status);
+		luasandbox_handle_error(sandbox, status TSRMLS_CC);
 		return;
 	}
 
@@ -553,7 +574,7 @@ PHP_METHOD(LuaSandbox, loadBinary)
  * Handle the situation where the emergency_timeout flag is set. Throws an 
  * appropriate exception and destroys the state.
  */
-static void luasandbox_handle_emergency_timeout(php_luasandbox_obj * sandbox)
+static void luasandbox_handle_emergency_timeout(php_luasandbox_obj * sandbox TSRMLS_DC)
 {
 	lua_close(sandbox->state);
 	sandbox->state = NULL;
@@ -561,7 +582,7 @@ static void luasandbox_handle_emergency_timeout(php_luasandbox_obj * sandbox)
 	zend_throw_exception(luasandboxemergencytimeouterror_ce, 
 		"The maximum execution time was exceeded "
 		"and the current Lua statement failed to return, leading to "
-		"destruction of the Lua state", LUA_ERRRUN);
+		"destruction of the Lua state", LUA_ERRRUN TSRMLS_CC);
 }
 /* }}} */
 
@@ -571,7 +592,7 @@ static void luasandbox_handle_emergency_timeout(php_luasandbox_obj * sandbox)
  * status is returned and an error message pushed to the stack. Throws a suitable
  * exception.
  */
-static void luasandbox_handle_error(php_luasandbox_obj * sandbox, int status)
+static void luasandbox_handle_error(php_luasandbox_obj * sandbox, int status TSRMLS_DC)
 {
 	lua_State * L = sandbox->state;
 	const char * errorMsg = luasandbox_error_to_string(L, -1);
@@ -617,7 +638,7 @@ static void luasandbox_handle_error(php_luasandbox_obj * sandbox, int status)
 		lua_rawgeti(L, -1, 3);
 		// Convert it to a zval
 		MAKE_STD_ZVAL(ztrace);
-		luasandbox_lua_to_zval(ztrace, L, -1, sandbox->current_zval, NULL);
+		luasandbox_lua_to_zval(ztrace, L, -1, sandbox->current_zval, NULL TSRMLS_CC);
 		// Put it in the exception object
 		zend_update_property(ce, zex, "luaTrace", sizeof("luaTrace")-1, ztrace TSRMLS_CC);
 		zval_ptr_dtor(&ztrace);
@@ -976,13 +997,15 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 	// Initialise the CPU limit timer
 	if (!sandbox->in_lua) {
 		if (luasandbox_timer_is_expired(&sandbox->timer)) {
-			zend_throw_exception(luasandboxtimeouterror_ce, luasandbox_timeout_message, LUA_ERRRUN);
+			zend_throw_exception(luasandboxtimeouterror_ce, luasandbox_timeout_message, 
+				LUA_ERRRUN TSRMLS_CC);
 			lua_settop(L, origTop - 1);
 			RETURN_FALSE;
 		}
 		timer_started = 1;
 		if (!LUASANDBOX_G(signal_handler_installed)) {
 			luasandbox_timer_install_handler(&LUASANDBOX_G(old_handler));
+			LUASANDBOX_G(signal_handler_installed) = 1;
 		}
 		luasandbox_timer_start(&sandbox->timer);
 	}
@@ -1003,13 +1026,13 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 		luasandbox_timer_stop(&sandbox->timer);
 	}
 	if (sandbox->emergency_timed_out) {
-		luasandbox_handle_emergency_timeout(sandbox);
+		luasandbox_handle_emergency_timeout(sandbox TSRMLS_CC);
 		return;
 	}
 
 	// Handle normal errors
 	if (status) {
-		luasandbox_handle_error(sandbox, status);
+		luasandbox_handle_error(sandbox, status TSRMLS_CC);
 		lua_settop(L, origTop - 1);
 		RETURN_FALSE;
 	}
