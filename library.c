@@ -152,6 +152,7 @@ void luasandbox_lib_destroy_globals(zend_luasandbox_globals * g TSRMLS_DC)
 	if (g->allowed_globals) {
 		zend_hash_destroy(g->allowed_globals);
 		pefree(g->allowed_globals, 1);
+		g->allowed_globals = NULL;
 	}
 }
 /* }}} */
