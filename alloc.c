@@ -44,7 +44,7 @@ void luasandbox_alloc_delete_state(php_luasandbox_alloc * alloc, lua_State * L)
 	// function pointer is unchanged before destroying the underlying 
 	// allocator. If the allocator has been changed, the mmap is not freed.
 #ifdef LUASANDBOX_LJ_64
-	lua_setallocf(alloc->state, alloc->old_alloc, alloc->old_alloc_ud);
+	lua_setallocf(L, alloc->old_alloc, alloc->old_alloc_ud);
 #endif
 
 	lua_close(L);
