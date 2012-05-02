@@ -256,9 +256,6 @@ static PHP_GSHUTDOWN_FUNCTION(luasandbox)
  */
 PHP_MSHUTDOWN_FUNCTION(luasandbox)
 {
-#ifndef ZTS
-	luasandbox_lib_destroy_globals(&luasandbox_globals TSRMLS_CC);
-#endif
 	return SUCCESS;
 }
 /* }}} */
