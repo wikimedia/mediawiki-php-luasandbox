@@ -79,11 +79,13 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 	// Load some relatively safe standard libraries
 	lua_pushcfunction(L, luaopen_base);
 	lua_call(L, 0, 0);
-	lua_pushcfunction(L, luaopen_string);
-	lua_call(L, 0, 0);
 	lua_pushcfunction(L, luaopen_table);
 	lua_call(L, 0, 0);
 	lua_pushcfunction(L, luaopen_math);
+	lua_call(L, 0, 0);
+
+	// Install our own string library
+	lua_pushcfunction(L, luasandbox_open_string);
 	lua_call(L, 0, 0);
 
 	// Remove any globals that aren't in a whitelist. This is mostly to remove 

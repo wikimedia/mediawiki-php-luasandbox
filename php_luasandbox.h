@@ -96,6 +96,10 @@ static inline void luasandbox_leave_php(lua_State * L, php_luasandbox_obj * inte
 void luasandbox_lib_register(lua_State * L TSRMLS_DC);
 void luasandbox_lib_destroy_globals(zend_luasandbox_globals * g TSRMLS_DC);
 
+/* luasandbox_lstrlib.c */
+
+void luasandbox_open_string(lua_State * L);
+
 /* data_conversion.c */
 
 void luasandbox_data_conversion_init(lua_State * L);
@@ -110,7 +114,6 @@ int luasandbox_is_trace_error(lua_State * L, int index);
 const char * luasandbox_error_to_string(lua_State * L, int index);
 int luasandbox_attach_trace(lua_State * L);
 void luasandbox_push_structured_trace(lua_State * L, int level);
-
 
 #endif	/* PHP_LUASANDBOX_H */
 

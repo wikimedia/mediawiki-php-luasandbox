@@ -39,5 +39,5 @@ if test "$PHP_LUASANDBOX" != "no"; then
 	PHP_EVAL_LIBLINE($ICU_LIBS, LUASANDBOX_SHARED_LIBADD)
 
 	PHP_SUBST(LUASANDBOX_SHARED_LIBADD)
-	PHP_NEW_EXTENSION(luasandbox, alloc.c data_conversion.c library.c luasandbox.c timer.c ustring.c, $ext_shared)
+	PHP_NEW_EXTENSION(luasandbox, alloc.c data_conversion.c library.c luasandbox.c timer.c ustring.c luasandbox_lstrlib.c, $ext_shared)
 fi

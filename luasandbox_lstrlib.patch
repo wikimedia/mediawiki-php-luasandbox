@@ -1,0 +1,29 @@
+--- lstrlib.c	2012-05-25 16:35:02.008521584 +1000
++++ luasandbox_lstrlib.c	2012-05-25 16:43:27.804174730 +1000
+@@ -361,8 +361,17 @@
+   else return NULL;
+ }
+ 
++static int do_nothing(lua_State * L) {
++}
+ 
+ static const char *match (MatchState *ms, const char *s, const char *p) {
++  /* If there is a call hook, trigger it now so that it's possible to
++   * interrupt long-running recursive match operations */
++  if (lua_gethookmask(ms->L) & LUA_MASKCALL) {
++	lua_pushcfunction(ms->L, do_nothing);
++	lua_call(ms->L, 0, 0);
++  }
++
+   init: /* using goto's to optimize tail recursion */
+   switch (*p) {
+     case '(': {  /* start capture */
+@@ -859,7 +868,7 @@
+ /*
+ ** Open string library
+ */
+-LUALIB_API int luaopen_string (lua_State *L) {
++LUALIB_API int luasandbox_open_string (lua_State *L) {
+   luaL_register(L, LUA_STRLIBNAME, strlib);
+ #if defined(LUA_COMPAT_GFIND)
+   lua_getfield(L, -1, "gmatch");
