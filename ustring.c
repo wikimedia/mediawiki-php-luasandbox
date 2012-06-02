@@ -297,7 +297,7 @@ int luasandbox_ustr_len(lua_State * L)
 {
 	luasandbox_ustr_header *header;
 
-	header = luaL_checkudata( L, 1, "luasandbox_ustr" );
+	header = luasandbox_checkustring( L, 1 );
 
 	lua_pushinteger( L, header->cp_len );
 	return 1;

@@ -257,6 +257,7 @@ static int luasandbox_math_randomseed(lua_State * L)
 {
 	php_luasandbox_obj * sandbox = luasandbox_get_php_obj(L);
 	sandbox->random_seed = (unsigned int)luaL_checkint(L, 1);
+	return 0;
 }
 /* }}} */
 
