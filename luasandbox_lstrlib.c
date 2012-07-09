@@ -176,6 +176,7 @@ typedef struct MatchState {
     const char *init;
     ptrdiff_t len;
   } capture[LUA_MAXCAPTURES];
+  int depth; /* the current recursion depth of match() */
 } MatchState;
 
 
@@ -364,6 +365,12 @@ static const char *match_capture (MatchState *ms, const char *s, int l) {
 static int do_nothing(lua_State * L) {
 }
 
+#define MATCH_RETURN(r) { \
+  const char * result = (r); \
+  --ms->depth; \
+  return result; \
+}
+
 static const char *match (MatchState *ms, const char *s, const char *p) {
   /* If there is a call hook, trigger it now so that it's possible to
    * interrupt long-running recursive match operations */
@@ -372,22 +379,26 @@ static const char *match (MatchState *ms, const char *s, const char *p) {
 	lua_call(ms->L, 0, 0);
   }
 
+  if (++ms->depth > LUAI_MAXCALLS) {
+    luaL_error(ms->L, "recursion depth limit exceeded");
+  }
   init: /* using goto's to optimize tail recursion */
   switch (*p) {
     case '(': {  /* start capture */
-      if (*(p+1) == ')')  /* position capture? */
-        return start_capture(ms, s, p+2, CAP_POSITION);
-      else
-        return start_capture(ms, s, p+1, CAP_UNFINISHED);
-    }
+      if (*(p+1) == ')') { /* position capture? */
+        MATCH_RETURN(start_capture(ms, s, p+2, CAP_POSITION));
+      } else {
+        MATCH_RETURN(start_capture(ms, s, p+1, CAP_UNFINISHED));
+      }
+   }
     case ')': {  /* end capture */
-      return end_capture(ms, s, p+1);
+      MATCH_RETURN(end_capture(ms, s, p+1));
     }
     case L_ESC: {
       switch (*(p+1)) {
         case 'b': {  /* balanced string? */
           s = matchbalance(ms, s, p+2);
-          if (s == NULL) return NULL;
+          if (s == NULL) MATCH_RETURN(NULL);
           p+=4; goto init;  /* else return match(ms, s, p+4); */
         }
         case 'f': {  /* frontier? */
@@ -399,13 +410,13 @@ static const char *match (MatchState *ms, const char *s, const char *p) {
           ep = classend(ms, p);  /* points to what is next */
           previous = (s == ms->src_init) ? '\0' : *(s-1);
           if (matchbracketclass(uchar(previous), p, ep-1) ||
-             !matchbracketclass(uchar(*s), p, ep-1)) return NULL;
+             !matchbracketclass(uchar(*s), p, ep-1)) MATCH_RETURN(NULL);
           p=ep; goto init;  /* else return match(ms, s, ep); */
         }
         default: {
           if (isdigit(uchar(*(p+1)))) {  /* capture results (%0-%9)? */
             s = match_capture(ms, s, uchar(*(p+1)));
-            if (s == NULL) return NULL;
+            if (s == NULL) MATCH_RETURN(NULL);
             p+=2; goto init;  /* else return match(ms, s, p+2) */
           }
           goto dflt;  /* case default */
@@ -413,12 +424,12 @@ static const char *match (MatchState *ms, const char *s, const char *p) {
       }
     }
     case '\0': {  /* end of pattern */
-      return s;  /* match succeeded */
+      MATCH_RETURN(s);  /* match succeeded */
     }
     case '$': {
-      if (*(p+1) == '\0')  /* is the `$' the last char in pattern? */
-        return (s == ms->src_end) ? s : NULL;  /* check end of string */
-      else goto dflt;
+      if (*(p+1) == '\0') /* is the `$' the last char in pattern? */
+        MATCH_RETURN((s == ms->src_end) ? s : NULL);  /* check end of string */
+      goto dflt;
     }
     default: dflt: {  /* it is a pattern item */
       const char *ep = classend(ms, p);  /* points to what is next */
@@ -427,20 +438,20 @@ static const char *match (MatchState *ms, const char *s, const char *p) {
         case '?': {  /* optional */
           const char *res;
           if (m && ((res=match(ms, s+1, ep+1)) != NULL))
-            return res;
+            MATCH_RETURN(res);
           p=ep+1; goto init;  /* else return match(ms, s, ep+1); */
         }
         case '*': {  /* 0 or more repetitions */
-          return max_expand(ms, s, p, ep);
+          MATCH_RETURN(max_expand(ms, s, p, ep));
         }
         case '+': {  /* 1 or more repetitions */
-          return (m ? max_expand(ms, s+1, p, ep) : NULL);
+          MATCH_RETURN(m ? max_expand(ms, s+1, p, ep) : NULL);
         }
         case '-': {  /* 0 or more repetitions (minimum) */
-          return min_expand(ms, s, p, ep);
+          MATCH_RETURN(min_expand(ms, s, p, ep));
         }
         default: {
-          if (!m) return NULL;
+          if (!m) MATCH_RETURN(NULL);
           s++; p=ep; goto init;  /* else return match(ms, s+1, ep); */
         }
       }
@@ -448,7 +459,7 @@ static const char *match (MatchState *ms, const char *s, const char *p) {
   }
 }
 
-
+#undef MATCH_RETURN
 
 static const char *lmemfind (const char *s1, size_t l1,
                                const char *s2, size_t l2) {
@@ -525,6 +536,7 @@ static int str_find_aux (lua_State *L, int find) {
     ms.L = L;
     ms.src_init = s;
     ms.src_end = s+l1;
+    ms.depth = 0;
     do {
       const char *res;
       ms.level = 0;
@@ -563,6 +575,7 @@ static int gmatch_aux (lua_State *L) {
   ms.L = L;
   ms.src_init = s;
   ms.src_end = s+ls;
+  ms.depth = 0;
   for (src = s + (size_t)lua_tointeger(L, lua_upvalueindex(3));
        src <= ms.src_end;
        src++) {
@@ -667,6 +680,7 @@ static int str_gsub (lua_State *L) {
   ms.L = L;
   ms.src_init = src;
   ms.src_end = src+srcl;
+  ms.depth = 0;
   while (n < max_s) {
     const char *e;
     ms.level = 0;
