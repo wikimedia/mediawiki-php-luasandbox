@@ -142,9 +142,6 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 	lua_setfield(L, -3, "traceback"); // -1
 	lua_pop(L, 1); // -1
 	lua_setglobal(L, "debug"); // -1
-
-	// Install string-related functions
-	luasandbox_install_unicode_functions(L);
 }
 /* }}} */
 
