@@ -1,0 +1,16 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	/usr/bin/phpize
+	dh_auto_configure -- --with-php-config=/usr/bin/php-config
+
+override_dh_auto_test:
+
+override_dh_auto_install:
+	INSTALL_ROOT=$(CURDIR)/debian/php-luasandbox make install
+	install -m 0755 -d $(CURDIR)/debian/php-luasandbox/etc/php5/conf.d
+	install -m 0644 luasandbox.ini $(CURDIR)/debian/php-luasandbox/etc/php5/conf.d/luasandbox.ini
+

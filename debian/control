@@ -1,0 +1,12 @@
+Source: php-luasandbox
+Section: web
+Priority: optional
+Maintainer: Tim Starling <tstarling@wikimedia.org>
+Build-Depends: debhelper (>= 7.0.50), php5-dev, liblua5.1-0-dev, pkg-config
+Standards-Version: 3.7.2
+
+Package: php-luasandbox
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, php5-common
+Description: Lua extension for PHP
+ A PHP extension providing a sandboxed Lua environment which can be used to run untrusted code.
