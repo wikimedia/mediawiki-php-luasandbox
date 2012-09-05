@@ -24,6 +24,7 @@
 
 static PHP_GINIT_FUNCTION(luasandbox);
 static PHP_GSHUTDOWN_FUNCTION(luasandbox);
+static int luasandbox_post_deactivate();
 static zend_object_value luasandbox_new(zend_class_entry *ce TSRMLS_DC);
 static lua_State * luasandbox_newstate(php_luasandbox_obj * intern TSRMLS_DC);
 static void luasandbox_free_storage(void *object TSRMLS_DC);
@@ -43,12 +44,18 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval,
 	zval *** args, zend_uint numArgs, zval * return_value TSRMLS_DC);
 static void luasandbox_handle_error(php_luasandbox_obj * sandbox, int status TSRMLS_DC);
 static void luasandbox_handle_emergency_timeout(php_luasandbox_obj * sandbox TSRMLS_DC);
-static int luasandbox_call_php(lua_State * L);
 static int luasandbox_dump_writer(lua_State * L, const void * p, size_t sz, void * ud);
 static zend_bool luasandbox_instanceof(
 	zend_class_entry *child_class, zend_class_entry *parent_class);
 
 extern char luasandbox_timeout_message[];
+
+/** For LuaSandbox::getProfilerFunctionReport() */
+enum {
+	LUASANDBOX_SAMPLES,
+	LUASANDBOX_SECONDS,
+	LUASANDBOX_PERCENT
+};
 
 zend_class_entry *luasandbox_ce;
 zend_class_entry *luasandboxerror_ce;
@@ -93,6 +100,17 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_getCPUUsage, 0)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_enableProfiler, 0)
+	ZEND_ARG_INFO(0, period)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_disableProfiler, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_getProfilerFunctionReport, 0)
+	ZEND_ARG_INFO(0, units)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_callFunction, 0)
 	ZEND_ARG_INFO(0, name)
 	ZEND_ARG_INFO(0, ...)
@@ -128,6 +146,9 @@ const zend_function_entry luasandbox_methods[] = {
 	PHP_ME(LuaSandbox, getPeakMemoryUsage, arginfo_luasandbox_getPeakMemoryUsage, 0)
 	PHP_ME(LuaSandbox, setCPULimit, arginfo_luasandbox_setCPULimit, 0)
 	PHP_ME(LuaSandbox, getCPUUsage, arginfo_luasandbox_getCPUUsage, 0)
+	PHP_ME(LuaSandbox, enableProfiler, arginfo_luasandbox_enableProfiler, 0)
+	PHP_ME(LuaSandbox, disableProfiler, arginfo_luasandbox_disableProfiler, 0)
+	PHP_ME(LuaSandbox, getProfilerFunctionReport, arginfo_luasandbox_getProfilerFunctionReport, 0)
 	PHP_ME(LuaSandbox, callFunction, arginfo_luasandbox_callFunction, 0)
 	PHP_ME(LuaSandbox, registerLibrary, arginfo_luasandbox_registerLibrary, 0)
 	{NULL, NULL, NULL}
@@ -164,7 +185,7 @@ zend_module_entry luasandbox_module_entry = {
 	PHP_MODULE_GLOBALS(luasandbox),
 	PHP_GINIT(luasandbox),
 	PHP_GSHUTDOWN(luasandbox),
-	NULL, /* post deactivate */
+	luasandbox_post_deactivate,
 	STANDARD_MODULE_PROPERTIES_EX
 };
 /* }}} */
@@ -185,10 +206,24 @@ PHP_MINIT_FUNCTION(luasandbox)
 	INIT_CLASS_ENTRY(ce, "LuaSandbox", luasandbox_methods);
 	luasandbox_ce = zend_register_internal_class(&ce TSRMLS_CC);
 	luasandbox_ce->create_object = luasandbox_new;
+	zend_declare_class_constant_long(luasandbox_ce,
+		"SAMPLES", sizeof("SAMPLES")-1, LUASANDBOX_SAMPLES TSRMLS_CC);
+	zend_declare_class_constant_long(luasandbox_ce,
+		"SECONDS", sizeof("SECONDS")-1, LUASANDBOX_SECONDS TSRMLS_CC);
+	zend_declare_class_constant_long(luasandbox_ce,
+		"PERCENT", sizeof("PERCENT")-1, LUASANDBOX_PERCENT TSRMLS_CC);
 
 	INIT_CLASS_ENTRY(ce, "LuaSandboxError", luasandbox_empty_methods);
 	luasandboxerror_ce = zend_register_internal_class_ex(
 			&ce, zend_exception_get_default(TSRMLS_C), NULL TSRMLS_CC);
+	zend_declare_class_constant_long(luasandboxerror_ce, 
+		"RUN", sizeof("RUN")-1, LUA_ERRRUN TSRMLS_CC);
+	zend_declare_class_constant_long(luasandboxerror_ce,
+		"SYNTAX", sizeof("SYNTAX")-1, LUA_ERRSYNTAX TSRMLS_CC);
+	zend_declare_class_constant_long(luasandboxerror_ce,
+		"MEM", sizeof("MEM")-1, LUA_ERRMEM TSRMLS_CC);
+	zend_declare_class_constant_long(luasandboxerror_ce,
+		"ERR", sizeof("ERR")-1, LUA_ERRERR TSRMLS_CC);
 
 	INIT_CLASS_ENTRY(ce, "LuaSandboxRuntimeError", luasandbox_empty_methods);
 	luasandboxruntimeerror_ce = zend_register_internal_class_ex(
@@ -217,15 +252,6 @@ PHP_MINIT_FUNCTION(luasandbox)
 	INIT_CLASS_ENTRY(ce, "LuaSandboxEmergencyTimeoutError", luasandbox_empty_methods);
 	luasandboxemergencytimeouterror_ce = zend_register_internal_class_ex(
 		&ce, luasandboxfatalerror_ce, NULL TSRMLS_CC);
-
-	zend_declare_class_constant_long(luasandboxerror_ce, 
-		"RUN", sizeof("RUN"), LUA_ERRRUN TSRMLS_CC);
-	zend_declare_class_constant_long(luasandboxerror_ce,
-		"SYNTAX", sizeof("SYNTAX"), LUA_ERRSYNTAX TSRMLS_CC);
-	zend_declare_class_constant_long(luasandboxerror_ce,
-		"MEM", sizeof("MEM"), LUA_ERRMEM TSRMLS_CC);
-	zend_declare_class_constant_long(luasandboxerror_ce,
-		"ERR", sizeof("ERR"), LUA_ERRERR TSRMLS_CC);
 
 	INIT_CLASS_ENTRY(ce, "LuaSandboxPlaceholder", luasandbox_empty_methods);
 	luasandboxplaceholder_ce = zend_register_internal_class(&ce TSRMLS_CC);
@@ -262,6 +288,12 @@ PHP_MSHUTDOWN_FUNCTION(luasandbox)
 
 /* {{{ PHP_RSHUTDOWN_FUNCTION */
 PHP_RSHUTDOWN_FUNCTION(luasandbox)
+{
+	return SUCCESS;
+}
+/* }}} */
+
+static int luasandbox_post_deactivate() /* {{{ */
 {
 	if (LUASANDBOX_G(signal_handler_installed)) {
 		luasandbox_timer_remove_handler(&LUASANDBOX_G(old_handler));
@@ -355,7 +387,7 @@ static void luasandbox_free_storage(void *object TSRMLS_DC)
 {
 	php_luasandbox_obj * sandbox = (php_luasandbox_obj*)object;
 
-	luasandbox_timer_stop(&sandbox->timer);
+	luasandbox_timer_destroy(&sandbox->timer);
 	if (sandbox->state) {
 		luasandbox_alloc_delete_state(&sandbox->alloc, sandbox->state);
 		sandbox->state = NULL;
@@ -799,6 +831,137 @@ PHP_METHOD(LuaSandbox, getCPUUsage)
 }
 /* }}} */
 
+/* {{{ proto void LuaSandbox::enableProfiler(float period = 0.002)
+ *
+ * Enable the profiler. Profiling will begin when Lua code is entered.
+ *
+ * We use a sampling profiler, with samples taken with the specified sampling 
+ * period, in seconds. Testing indicates that at least on Linux, setting a 
+ * period less than 1ms will lead to a high overrun count but no performance 
+ * problems.
+ */
+PHP_METHOD(LuaSandbox, enableProfiler)
+{
+	double period = 2e-3;
+	struct timespec ts;
+	php_luasandbox_obj * sandbox = (php_luasandbox_obj*)
+		zend_object_store_get_object(getThis() TSRMLS_CC);
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "|d", &period) == FAILURE) {
+		RETURN_FALSE;
+	}
+	
+	luasandbox_set_timespec(&ts, period);
+	luasandbox_timer_enable_profiler(&sandbox->timer, &ts);
+}
+/* }}} */
+
+/* {{{ proto void LuaSandbox::disableProfiler()
+ *
+ * Disable the profiler.
+ */
+PHP_METHOD(LuaSandbox, disableProfiler)
+{
+	struct timespec ts = {0, 0};
+	php_luasandbox_obj * sandbox = (php_luasandbox_obj*)
+		zend_object_store_get_object(getThis() TSRMLS_CC);
+	luasandbox_timer_enable_profiler(&sandbox->timer, &ts);
+}
+/* }}} */
+
+static int luasandbox_sort_profile(const void *a, const void *b TSRMLS_DC) /* {{{ */
+{
+	Bucket *bucket_a, *bucket_b;
+	size_t value_a, value_b;
+
+	bucket_a = *((Bucket **) a);
+	bucket_b = *((Bucket **) b);
+	value_a = *(size_t*)bucket_a->pData;
+	value_b = *(size_t*)bucket_b->pData;
+
+	if (value_a < value_b) {
+		return 1;
+	} else if (value_a > value_b) {
+		return -1;
+	} else {
+		return 0;
+	}
+}
+
+/* }}} */
+
+/* {{{ proto array LuaSandbox::getProfilerFunctionReport(int what = LuaSandbox::SECONDS)
+ *
+ * For a profiling instance previously started by enableProfiler(), get a report
+ * of the cost of each function. The return value will be an associative array
+ * mapping the function name (with source file and line defined in angle 
+ * brackets) to the cost.
+ *
+ * The measurement unit used for the cost is determined by the what parameter:
+ *   - LuaSandbox::SAMPLES: Measure in number of samples
+ *   - LuaSandbox::SECONDS: Measure in seconds of CPU time (default)
+ *   - LuaSandbox::PERCENT: Measure percentage of CPU time
+ */
+PHP_METHOD(LuaSandbox, getProfilerFunctionReport)
+{
+	long units = LUASANDBOX_SECONDS;
+	Bucket * p;
+	php_luasandbox_obj * sandbox = (php_luasandbox_obj*)
+		zend_object_store_get_object(getThis() TSRMLS_CC);
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "|l", &units) == FAILURE) {
+		RETURN_FALSE;
+	}
+
+	if (units != LUASANDBOX_SECONDS
+			&& units != LUASANDBOX_SAMPLES
+			&& units != LUASANDBOX_PERCENT )
+	{
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, 
+				"invalid value for \"units\" passed to LuaSandbox::getProfilerFunctionReport");
+		RETURN_FALSE;
+	}
+
+	HashTable * counts = sandbox->timer.function_counts;
+	if (!counts) {
+		array_init(return_value);
+		return;
+	}
+	
+	// Sort the input array in descending order of time usage
+	zend_hash_sort(counts, zend_qsort, luasandbox_sort_profile, 0 TSRMLS_CC);
+
+	array_init_size(return_value, counts->nNumOfElements);	
+
+	// Copy the data to the output array, scaling as necessary
+	double scale = 0.;
+	if (units == LUASANDBOX_SECONDS) {
+		struct timespec * ts = &sandbox->timer.profiler_period;
+		scale = ts->tv_sec + ts->tv_nsec * 1e-9;
+	} else if (units == LUASANDBOX_PERCENT) {
+		if (sandbox->timer.total_count != 0) {
+			scale = 100. / sandbox->timer.total_count;
+		}
+	}
+
+	for (p = counts->pListHead; p; p = p->pListNext) {
+		size_t count = *(size_t*)p->pData;
+		if (units == LUASANDBOX_SAMPLES) {
+			add_assoc_long_ex(return_value, p->arKey, p->nKeyLength, count);
+		} else {
+			add_assoc_double_ex(return_value, p->arKey, p->nKeyLength, count * scale);
+		}
+	}
+
+#ifdef LUASANDBOX_REPORT_OVERRUNS
+	if (units == LUASANDBOX_SAMPLES) {
+		add_assoc_long(return_value, "overrun", sandbox->timer.overrun_count);
+	} else {
+		add_assoc_double(return_value, "overrun", sandbox->timer.overrun_count * scale);
+	}
+#endif
+}
+
+/* }}} */
+
 /** {{{ LuaSandbox::getMemoryUsage */
 PHP_METHOD(LuaSandbox, getMemoryUsage)
 {
@@ -1229,7 +1392,7 @@ static zend_bool luasandbox_instanceof(
  * The Lua callback for calling PHP functions. See the doc comment on 
  * LuaSandbox::registerLibrary() for information about calling conventions.
  */
-static int luasandbox_call_php(lua_State * L)
+int luasandbox_call_php(lua_State * L)
 {
 	php_luasandbox_obj * intern = luasandbox_get_php_obj(L);
 	

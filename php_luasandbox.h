@@ -32,6 +32,8 @@ extern zend_module_entry luasandbox_module_entry;
 #include "TSRM.h"
 #endif
 
+int luasandbox_call_php(lua_State * L);
+
 PHP_MINIT_FUNCTION(luasandbox);
 PHP_MSHUTDOWN_FUNCTION(luasandbox);
 PHP_RSHUTDOWN_FUNCTION(luasandbox);
@@ -44,6 +46,9 @@ PHP_METHOD(LuaSandbox, getMemoryUsage);
 PHP_METHOD(LuaSandbox, getPeakMemoryUsage);
 PHP_METHOD(LuaSandbox, setCPULimit);
 PHP_METHOD(LuaSandbox, getCPUUsage);
+PHP_METHOD(LuaSandbox, enableProfiler);
+PHP_METHOD(LuaSandbox, disableProfiler);
+PHP_METHOD(LuaSandbox, getProfilerFunctionReport);
 PHP_METHOD(LuaSandbox, callFunction);
 PHP_METHOD(LuaSandbox, registerLibrary);
 
@@ -98,7 +103,7 @@ void luasandbox_lib_destroy_globals(zend_luasandbox_globals * g TSRMLS_DC);
 
 /* luasandbox_lstrlib.c */
 
-void luasandbox_open_string(lua_State * L);
+int luasandbox_open_string(lua_State * L);
 
 /* data_conversion.c */
 
