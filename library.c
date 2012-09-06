@@ -14,8 +14,12 @@
 
 #include "php.h"
 #include "php_luasandbox.h"
-#include "luasandbox_unicode.h"
 
+#ifdef LUASANDBOX_NO_CLOCK
+#include <time.h>
+#endif
+
+static void luasandbox_lib_filter_table(lua_State * L, char ** member_names);
 static HashTable * luasandbox_lib_get_allowed_globals(TSRMLS_D);
 
 static int luasandbox_base_tostring(lua_State * L);
@@ -23,6 +27,7 @@ static int luasandbox_math_random(lua_State * L);
 static int luasandbox_math_randomseed(lua_State * L);
 static int luasandbox_base_pcall(lua_State * L);
 static int luasandbox_base_xpcall(lua_State *L);
+static int luasandbox_os_clock(lua_State * L);
 
 /**
  * Allowed global variables. Omissions are:
@@ -66,9 +71,25 @@ char * luasandbox_allowed_globals[] = {
 	// libs
 	"string",
 	"table",
-	"math"
+	"math",
+	"os",
+	"debug",
+	NULL
 };
-#define LUASANDBOX_NUM_ALLOWED_GLOBALS (sizeof(luasandbox_allowed_globals) / sizeof(char*))
+
+char * luasandbox_allowed_os_members[] = {
+	"date",
+	"difftime",
+	"time",
+	NULL
+};
+
+char * luasandbox_allowed_debug_members[] = {
+	"traceback",
+	NULL
+};
+
+
 
 ZEND_EXTERN_MODULE_GLOBALS(luasandbox);
 
@@ -76,17 +97,31 @@ ZEND_EXTERN_MODULE_GLOBALS(luasandbox);
  */
 void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 {
-	// Load some relatively safe standard libraries
+	// Load the standard libraries that we need
 	lua_pushcfunction(L, luaopen_base);
 	lua_call(L, 0, 0);
 	lua_pushcfunction(L, luaopen_table);
 	lua_call(L, 0, 0);
 	lua_pushcfunction(L, luaopen_math);
 	lua_call(L, 0, 0);
+	lua_pushcfunction(L, luaopen_debug);
+	lua_call(L, 0, 0);
+	lua_pushcfunction(L, luaopen_os);
+	lua_call(L, 0, 0);
 
 	// Install our own string library
 	lua_pushcfunction(L, luasandbox_open_string);
 	lua_call(L, 0, 0);
+
+	// Filter the os library
+	lua_getglobal(L, "os");
+	luasandbox_lib_filter_table(L, luasandbox_allowed_os_members);
+	lua_setglobal(L, "os");
+
+	// Filter the debug library
+	lua_getglobal(L, "debug");
+	luasandbox_lib_filter_table(L, luasandbox_allowed_debug_members);
+	lua_setglobal(L, "debug");
 
 	// Remove any globals that aren't in a whitelist. This is mostly to remove 
 	// unsafe functions from the base library.
@@ -131,17 +166,31 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 	lua_setfield(L, -2, "randomseed");
 	lua_pop(L, 1);
 
-	// Allow debug.traceback. Equivalent to Lua code:
-	//    debug = {traceback = traceback}
-	// Stack deltas are shown in each comment below
-	lua_pushcfunction(L, luaopen_debug); // +1
-	lua_call(L, 0, 0); // -1
-	lua_createtable(L, 0, 1); // +1
-	lua_getglobal(L, "debug"); // +1
-	lua_getfield(L, -1, "traceback"); // +1
-	lua_setfield(L, -3, "traceback"); // -1
-	lua_pop(L, 1); // -1
-	lua_setglobal(L, "debug"); // -1
+	// Install our own version of os.clock(), which uses our high-resolution
+	// usage timer
+	lua_getglobal(L, "os");
+	lua_pushcfunction(L, luasandbox_os_clock);
+	lua_setfield(L, -2, "clock");
+	lua_pop(L, 1);
+}
+/* }}} */
+
+/** {{{ luasandbox_lib_filter_table
+ * 
+ * Make a copy of the table at the top of the stack, and remove any members
+ * from it that aren't in the given whitelist.
+ */
+static void luasandbox_lib_filter_table(lua_State * L, char ** member_names)
+{
+	int i, n;
+	int si = lua_gettop(L);
+	for (n = 0; member_names[n]; n++);
+	lua_createtable(L, 0, n);
+	for (i = 0; member_names[i]; i++) {
+		lua_getfield(L, si, member_names[i]);
+		lua_setfield(L, si+1, member_names[i]);
+	}
+	lua_replace(L, si);
 }
 /* }}} */
 
@@ -162,14 +211,16 @@ void luasandbox_lib_destroy_globals(zend_luasandbox_globals * g TSRMLS_DC)
  */
 static HashTable * luasandbox_lib_get_allowed_globals(TSRMLS_D)
 {
-	int i;
+	int i, n;
 	if (LUASANDBOX_G(allowed_globals)) {
 		return LUASANDBOX_G(allowed_globals);
 	}
 
+	for (n = 0; luasandbox_allowed_globals[n]; n++);
+
 	LUASANDBOX_G(allowed_globals) = pemalloc(sizeof(HashTable), 1);
-	zend_hash_init(LUASANDBOX_G(allowed_globals), LUASANDBOX_NUM_ALLOWED_GLOBALS, NULL, NULL, 1);
-	for (i = 0; i < LUASANDBOX_NUM_ALLOWED_GLOBALS; i++) {
+	zend_hash_init(LUASANDBOX_G(allowed_globals), n, NULL, NULL, 1);
+	for (i = 0; luasandbox_allowed_globals[i]; i++) {
 		zend_hash_update(LUASANDBOX_G(allowed_globals), 
 			luasandbox_allowed_globals[i], strlen(luasandbox_allowed_globals[i]) + 1,
 			"", 1, NULL);
@@ -361,3 +412,23 @@ static int luasandbox_base_xpcall (lua_State *L)
 }
 /* }}} */
 
+/** {{{ luasandbox_os_clock
+ *
+ * Implementation of os.clock() which uses our high-resolution usage timer,
+ * if available, to provide an accurate measure of Lua CPU usage since a 
+ * particular LuaSandbox object was created.
+ */
+static int luasandbox_os_clock(lua_State * L)
+{
+#ifdef LUASANDBOX_NO_CLOCK
+	lua_pushnumber(L, ((lua_Number)clock())/(lua_Number)CLOCKS_PER_SEC);
+#else
+	struct timespec ts;
+	php_luasandbox_obj * sandbox = luasandbox_get_php_obj(L);
+	luasandbox_timer_get_usage(&sandbox->timer, &ts);
+	lua_pushnumber(L, ts.tv_sec + 1e-9 * ts.tv_nsec);
+#endif
+	return 1;
+}
+
+/* }}} */
