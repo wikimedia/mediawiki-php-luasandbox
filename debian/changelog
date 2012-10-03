@@ -1,3 +1,10 @@
+php-luasandbox (1.1-1) precise-wikimedia; urgency=low
+
+  * Implemented a sampling profiler.
+  * Allow os.date() etc.
+
+ -- Tim Starling <tstarling@wikimedia.org>  Wed, 03 Oct 2012 16:42:57 +1000
+
 php-luasandbox (1.0-1) lucid-wikimedia; urgency=low
   * Initial release
 
