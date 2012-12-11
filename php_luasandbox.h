@@ -50,6 +50,7 @@ PHP_METHOD(LuaSandbox, enableProfiler);
 PHP_METHOD(LuaSandbox, disableProfiler);
 PHP_METHOD(LuaSandbox, getProfilerFunctionReport);
 PHP_METHOD(LuaSandbox, callFunction);
+PHP_METHOD(LuaSandbox, wrapPhpFunction);
 PHP_METHOD(LuaSandbox, registerLibrary);
 
 PHP_METHOD(LuaSandboxFunction, __construct);

@@ -116,6 +116,11 @@ ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_callFunction, 0)
 	ZEND_ARG_INFO(0, ...)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_wrapPhpFunction, 0)
+	ZEND_ARG_INFO(0, name)
+	ZEND_ARG_INFO(0, function)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_registerLibrary, 0)
 	ZEND_ARG_INFO(0, libname)
 	ZEND_ARG_INFO(0, functions)
@@ -150,6 +155,7 @@ const zend_function_entry luasandbox_methods[] = {
 	PHP_ME(LuaSandbox, disableProfiler, arginfo_luasandbox_disableProfiler, 0)
 	PHP_ME(LuaSandbox, getProfilerFunctionReport, arginfo_luasandbox_getProfilerFunctionReport, 0)
 	PHP_ME(LuaSandbox, callFunction, arginfo_luasandbox_callFunction, 0)
+	PHP_ME(LuaSandbox, wrapPhpFunction, arginfo_luasandbox_wrapPhpFunction, 0)
 	PHP_ME(LuaSandbox, registerLibrary, arginfo_luasandbox_registerLibrary, 0)
 	{NULL, NULL, NULL}
 };
@@ -1037,6 +1043,43 @@ PHP_METHOD(LuaSandbox, callFunction)
 	if (numArgs) {
 		efree(args);
 	}
+}
+/* }}} */
+
+/** {{{ proto LuaSandboxFunction LuaSandbox::wrapPhpFunction(callable function) 
+ *
+ * Wrap a PHP callable in a LuaSandboxFunction, so it can be passed into Lua as
+ * an anonymous function.
+ *
+ * For more information about calling Lua functions and the return values, see
+ * LuaSandboxFunction::call().
+ */
+PHP_METHOD(LuaSandbox, wrapPhpFunction)
+{
+	zval *z;
+
+	php_luasandbox_obj * sandbox = (php_luasandbox_obj*)
+		zend_object_store_get_object(getThis() TSRMLS_CC);
+	lua_State * L = sandbox->state;
+	CHECK_VALID_STATE(L);
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z",
+		&z) == FAILURE)
+	{
+		RETVAL_FALSE;
+	}
+
+	luasandbox_push_zval_userdata(L, z);
+	lua_pushcclosure(L, luasandbox_call_php, 1);
+
+	luasandbox_lua_to_zval(return_value, L, lua_gettop(L), this_ptr, NULL TSRMLS_CC);
+	if (Z_TYPE_P(return_value) == IS_NULL) {
+		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+				"too many chunks loaded already");
+		RETVAL_FALSE;
+	}
+
+	lua_pop(L, 1);
 }
 /* }}} */
 
