@@ -314,13 +314,6 @@ void luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 			break;
 		}
 		case LUA_TUSERDATA:
-			if(luasandbox_isustr(L, index)) {
-				const uint8_t *str;
-				size_t length;
-				str = luasandbox_getustr(L, index, &length);
-				ZVAL_STRINGL(z, str, length, 1);
-				break;
-			}
 		case LUA_TTHREAD:
 		case LUA_TLIGHTUSERDATA:
 		default:

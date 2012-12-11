@@ -332,7 +332,7 @@ void luasandbox_timer_set_limits(luasandbox_timer_set * lts,
 	int was_running = 0;
 	if (lts->is_running) {
 		was_running = 1;
-		lusandbox_timer_stop(lts);
+		luasandbox_timer_stop(lts);
 	}
 	lts->normal_remaining = lts->normal_limit = *normal_timeout;
 	lts->emergency_remaining = lts->emergency_limit = *emergency_timeout;
