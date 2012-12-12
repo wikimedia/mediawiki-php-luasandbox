@@ -379,17 +379,13 @@ static void luasandbox_timer_create_one(luasandbox_timer * lt, php_luasandbox_ob
 
 	lt->cbdata.type = type;
 	lt->cbdata.sandbox = sandbox;
-	
-	// My testing indicates that using a thread for profiler event notification
-	// doesn't reduce the overrun count, but maybe it will in the future or on
-	// some other system.
-#ifdef LUASANDBOX_PROFILER_USE_THREAD
+
+	// Don't use SIGEV_SIGNAL for the profiler, because bombarding PHP with
+	// signals every 2 milliseconds breaks important syscalls like fork().
 	if (type == LUASANDBOX_TIMER_PROFILER) {
 		ev.sigev_notify = SIGEV_THREAD;
 		ev.sigev_notify_function = luasandbox_timer_handle_profiler;
-	} else
-#endif
-	{
+	} else {
 		ev.sigev_notify = SIGEV_SIGNAL;
 		ev.sigev_signo = LUASANDBOX_SIGNAL;
 	}
