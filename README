@@ -18,5 +18,5 @@ Using brew:
  brew link icu4c
 
 That will makes pkg-config files available. Check them using:
- ls -l `brew --prefix/lib/pkgconfig/icu*pc`
+ ls -l `brew --prefix`/lib/pkgconfig/icu*pc
 
