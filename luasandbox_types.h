@@ -50,7 +50,11 @@ typedef struct {
 #else /*CLOCK_REALTIME*/
 
 typedef struct {} luasandbox_timer;
-typedef struct {} luasandbox_timer_set;
+typedef struct {
+	struct timespec profiler_period;
+	HashTable * function_counts;
+	long total_count;
+} luasandbox_timer_set;
 
 #endif /*CLOCK_REALTIME*/
 

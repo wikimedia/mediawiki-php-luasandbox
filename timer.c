@@ -31,7 +31,7 @@ void luasandbox_timer_get_usage(luasandbox_timer_set * lts, struct timespec * ts
 	ts->tv_sec = ts->tv_nsec = 0;
 }
 void luasandbox_timer_timeout_error(lua_State *L) {}
-int luasandbox_is_expired(luasandbox_timer_set * lts) {
+int luasandbox_timer_is_expired(luasandbox_timer_set * lts) {
 	return 0;
 }
 
