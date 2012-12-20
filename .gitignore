@@ -8,6 +8,12 @@
 Makefile*
 build/
 modules/
+tests/*.diff
+tests/*.out
+tests/*.php
+tests/*.exp
+tests/*.log
+tests/*.sh
 install-sh
 libtool
 ltmain.sh
