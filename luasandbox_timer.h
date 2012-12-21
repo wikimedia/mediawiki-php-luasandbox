@@ -30,7 +30,7 @@ void luasandbox_timer_create(luasandbox_timer_set * lts, struct _php_luasandbox_
 void luasandbox_timer_set_limits(luasandbox_timer_set * lts,
 		struct timespec * normal_timeout, 
 		struct timespec * emergency_timeout);
-void luasandbox_timer_enable_profiler(luasandbox_timer_set * lts, struct timespec * period);
+int luasandbox_timer_enable_profiler(luasandbox_timer_set * lts, struct timespec * period);
 void luasandbox_timer_start(luasandbox_timer_set * lts);
 void luasandbox_timer_stop(luasandbox_timer_set * lts);
 void luasandbox_timer_destroy(luasandbox_timer_set * lts);

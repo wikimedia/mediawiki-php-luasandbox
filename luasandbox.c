@@ -837,7 +837,7 @@ PHP_METHOD(LuaSandbox, getCPUUsage)
 }
 /* }}} */
 
-/* {{{ proto void LuaSandbox::enableProfiler(float period = 0.002)
+/* {{{ proto boolean LuaSandbox::enableProfiler(float period = 0.002)
  *
  * Enable the profiler. Profiling will begin when Lua code is entered.
  *
@@ -857,7 +857,7 @@ PHP_METHOD(LuaSandbox, enableProfiler)
 	}
 	
 	luasandbox_set_timespec(&ts, period);
-	luasandbox_timer_enable_profiler(&sandbox->timer, &ts);
+	RETURN_BOOL(luasandbox_timer_enable_profiler(&sandbox->timer, &ts));
 }
 /* }}} */
 

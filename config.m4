@@ -19,9 +19,12 @@ if test "$PHP_LUASANDBOX" != "no"; then
 		])
 	])
 
-	dnl Timers require real-time library on Linux and not supported on other
-	dnl platforms
+	dnl Timers require real-time and pthread library on Linux and not
+	dnl supported on other platforms
 	AC_SEARCH_LIBS([timer_create], [rt], [
+		PHP_EVAL_LIBLINE($LIBS, LUASANDBOX_SHARED_LIBADD)
+	])
+	AC_SEARCH_LIBS([sem_init], [pthread], [
 		PHP_EVAL_LIBLINE($LIBS, LUASANDBOX_SHARED_LIBADD)
 	])
 

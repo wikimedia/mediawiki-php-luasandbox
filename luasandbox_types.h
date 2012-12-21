@@ -1,7 +1,10 @@
 #ifndef LUASANDBOX_TYPES_H
 #define LUASANDBOX_TYPES_H
 
+#include <semaphore.h>
 #include "php.h"
+
+#define MAX_PROFILING_CLOCKS 20
 
 #ifdef CLOCK_REALTIME
 
@@ -9,6 +12,7 @@ struct _php_luasandbox_obj;
 
 typedef struct {
 	int type;
+	sem_t semaphore;
 	struct _php_luasandbox_obj * sandbox;
 } luasandbox_timer_callback_data;
 
@@ -20,7 +24,7 @@ typedef struct {
 typedef struct {
 	luasandbox_timer normal_timer;
 	luasandbox_timer emergency_timer;
-	luasandbox_timer profiler_timer;
+	luasandbox_timer *profiler_timer;
 	struct timespec normal_limit, normal_remaining;
 	struct timespec emergency_limit, emergency_remaining;
 	struct timespec usage_start, usage;
@@ -62,6 +66,13 @@ ZEND_BEGIN_MODULE_GLOBALS(luasandbox)
 	int signal_handler_installed;
 	struct sigaction old_handler;
 	HashTable * allowed_globals;
+
+#ifdef CLOCK_REALTIME
+	/* We need a global array of timers, because SIGEV_THREAD may still fire
+	 * the timer well after timer_delete is called. Thanks, POSIX. */
+	int profiler_timer_idx;
+	luasandbox_timer profiler_timers[MAX_PROFILING_CLOCKS];
+#endif
 ZEND_END_MODULE_GLOBALS(luasandbox)
 
 typedef struct {
