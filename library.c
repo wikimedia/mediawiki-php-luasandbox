@@ -29,6 +29,11 @@ static int luasandbox_base_pcall(lua_State * L);
 static int luasandbox_base_xpcall(lua_State *L);
 static int luasandbox_os_clock(lua_State * L);
 
+#if LUA_VERSION_NUM < 502
+static int luasandbox_base_pairs(lua_State *L);
+static int luasandbox_base_ipairs(lua_State *L);
+#endif
+
 /**
  * Allowed global variables. Omissions are:
  *   * pcall, xpcall: We have our own versions which don't allow interception of
@@ -172,6 +177,18 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 	lua_pushcfunction(L, luasandbox_os_clock);
 	lua_setfield(L, -2, "clock");
 	lua_pop(L, 1);
+
+	// Install our own versions of pairs and ipairs, if necessary
+#if LUA_VERSION_NUM < 502
+	lua_getfield(L, LUA_GLOBALSINDEX, "pairs");
+	lua_setfield(L, LUA_REGISTRYINDEX, "luasandbox_old_pairs");
+	lua_getfield(L, LUA_GLOBALSINDEX, "ipairs");
+	lua_setfield(L, LUA_REGISTRYINDEX, "luasandbox_old_ipairs");
+	lua_pushcfunction(L, luasandbox_base_pairs);
+	lua_setglobal(L, "pairs");
+	lua_pushcfunction(L, luasandbox_base_ipairs);
+	lua_setglobal(L, "ipairs");
+#endif
 }
 /* }}} */
 
@@ -432,3 +449,39 @@ static int luasandbox_os_clock(lua_State * L)
 }
 
 /* }}} */
+
+#if LUA_VERSION_NUM < 502
+/** {{{ luasandbox_base_pairs
+ *
+ * This is our implementation of the Lua function pairs(). It allows the Lua
+ * 5.2 __pairs metamethod to override the standard behavior.
+ */
+static int luasandbox_base_pairs (lua_State *L)
+{
+	if (!luaL_getmetafield(L, 1, "__pairs")) {
+		luaL_checktype(L, 1, LUA_TTABLE);
+		lua_getfield(L, LUA_REGISTRYINDEX, "luasandbox_old_pairs");
+	}
+	lua_pushvalue(L, 1);
+	lua_call(L, 1, 3);
+	return 3;
+}
+/* }}} */
+
+/** {{{ luasandbox_base_ipairs
+ *
+ * This is our implementation of the Lua function ipairs(). It allows the Lua
+ * 5.2 __ipairs metamethod to override the standard behavior.
+ */
+static int luasandbox_base_ipairs (lua_State *L)
+{
+	if (!luaL_getmetafield(L, 1, "__ipairs")) {
+		luaL_checktype(L, 1, LUA_TTABLE);
+		lua_getfield(L, LUA_REGISTRYINDEX, "luasandbox_old_ipairs");
+	}
+	lua_pushvalue(L, 1);
+	lua_call(L, 1, 3);
+	return 3;
+}
+/* }}} */
+#endif
