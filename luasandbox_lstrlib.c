@@ -19,6 +19,12 @@
 #include "lauxlib.h"
 #include "lualib.h"
 
+#ifdef LUAI_MAXCALLS
+#define LUASANDBOX_MAX_MATCH_DEPTH LUAI_MAXCALLS
+#else
+#define LUASANDBOX_MAX_MATCH_DEPTH 20000
+#endif
+
 
 /* macro to `unsign' a character */
 #define uchar(c)        ((unsigned char)(c))
@@ -379,7 +385,7 @@ static const char *match (MatchState *ms, const char *s, const char *p) {
 	lua_call(ms->L, 0, 0);
   }
 
-  if (++ms->depth > LUAI_MAXCALLS) {
+  if (++ms->depth > LUASANDBOX_MAX_MATCH_DEPTH) {
     luaL_error(ms->L, "recursion depth limit exceeded");
   }
   init: /* using goto's to optimize tail recursion */
