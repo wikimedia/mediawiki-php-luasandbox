@@ -1,3 +1,13 @@
+php-luasandbox (1.2-1) precise-wikimedia; urgency=low
+
+  * Fix profiler bugs
+  * Add wrapPhpFunction
+  * Fix Mac OS X compilation
+  * Fix compilation against LuaJIT
+  * Support metatable override of pairs() and ipairs(), like Lua 5.2 
+
+ -- Tim Starling <tstarling@wikimedia.org>  Wed, 20 Feb 2013 14:54:44 +1100
+
 php-luasandbox (1.1-1) precise-wikimedia; urgency=low
 
   * Implemented a sampling profiler.
