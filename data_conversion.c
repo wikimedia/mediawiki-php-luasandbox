@@ -11,7 +11,6 @@
 
 #include "php.h"
 #include "php_luasandbox.h"
-#include "luasandbox_unicode.h"
 
 static void luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
 	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC);

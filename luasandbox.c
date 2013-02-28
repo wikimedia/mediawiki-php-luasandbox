@@ -16,6 +16,11 @@
 #include "luasandbox_timer.h"
 #include "ext/standard/php_smart_str.h"
 
+// Compatability for PHP <= 5.3.6
+#ifndef ZEND_FE_END
+#define ZEND_FE_END { NULL, NULL, NULL, 0, 0 }
+#endif
+
 #define CHECK_VALID_STATE(state) \
 	if (!state) { \
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "invalid LuaSandbox state"); \
@@ -140,7 +145,7 @@ ZEND_END_ARG_INFO()
 
 /** {{{ function entries */
 const zend_function_entry luasandbox_functions[] = {
-	{NULL, NULL, NULL}	/* Must be the last line in luasandbox_functions[] */
+	ZEND_FE_END	/* Must be the last line in luasandbox_functions[] */
 };
 
 const zend_function_entry luasandbox_methods[] = {
@@ -157,7 +162,7 @@ const zend_function_entry luasandbox_methods[] = {
 	PHP_ME(LuaSandbox, callFunction, arginfo_luasandbox_callFunction, 0)
 	PHP_ME(LuaSandbox, wrapPhpFunction, arginfo_luasandbox_wrapPhpFunction, 0)
 	PHP_ME(LuaSandbox, registerLibrary, arginfo_luasandbox_registerLibrary, 0)
-	{NULL, NULL, NULL}
+	ZEND_FE_END
 };
 
 const zend_function_entry luasandboxfunction_methods[] = {
@@ -165,11 +170,11 @@ const zend_function_entry luasandboxfunction_methods[] = {
 		ZEND_ACC_PRIVATE | ZEND_ACC_FINAL)
 	PHP_ME(LuaSandboxFunction, call, arginfo_luasandboxfunction_call, 0)
 	PHP_ME(LuaSandboxFunction, dump, arginfo_luasandboxfunction_dump, 0)
-	{NULL, NULL, NULL}
+	ZEND_FE_END
 };
 
 const zend_function_entry luasandbox_empty_methods[] = {
-	{NULL, NULL, NULL}
+	ZEND_FE_END
 };
 
 /* }}} */
@@ -520,8 +525,6 @@ static void luasandbox_load_helper(int binary, INTERNAL_FUNCTION_PARAMETERS)
 	int codeLength, chunkNameLength;
 	int status;
 	lua_State * L;
-	size_t index;
-	php_luasandboxfunction_obj * func_obj;
 	int have_mark;
 	php_luasandbox_obj * sandbox;
 	
@@ -643,11 +646,9 @@ static void luasandbox_handle_error(php_luasandbox_obj * sandbox, int status TSR
 		return;
 	}
 
-	if (luasandbox_is_fatal(L, -1) && !strcmp(errorMsg, luasandbox_timeout_message)) {
-		ce = luasandboxtimeouterror_ce;
-	}
 	switch (status) {
 		case LUA_ERRRUN:
+		default:
 			if (luasandbox_is_fatal(L, -1)) {
 				if (!strcmp(errorMsg, luasandbox_timeout_message)) {
 					ce = luasandboxtimeouterror_ce;

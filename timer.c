@@ -250,7 +250,6 @@ static void luasandbox_timer_profiler_hook(lua_State *L, lua_Debug *ar)
 {
 	lua_sethook(L, luasandbox_timer_profiler_hook, 0, 0);
 
-	int i;
 	php_luasandbox_obj * sandbox = luasandbox_get_php_obj(L);
 	lua_Debug debug;
 	memset(&debug, 0, sizeof(debug));

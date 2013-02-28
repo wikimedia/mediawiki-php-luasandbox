@@ -19,7 +19,9 @@
 static inline int luasandbox_update_memory_accounting(php_luasandbox_alloc * obj, 
 	size_t osize, size_t nsize);
 static void *luasandbox_php_alloc(void *ud, void *ptr, size_t osize, size_t nsize);
+#ifdef LUASANDBOX_LJ_64
 static void *luasandbox_passthru_alloc(void *ud, void *ptr, size_t osize, size_t nsize);
+#endif
 
 lua_State * luasandbox_alloc_new_state(php_luasandbox_alloc * alloc, php_luasandbox_obj * sandbox)
 {
@@ -110,6 +112,7 @@ static void *luasandbox_php_alloc(void *ud, void *ptr, size_t osize, size_t nsiz
 }
 /* }}} */
 
+#ifdef LUASANDBOX_LJ_64
 /** {{{ luasandbox_passthru_alloc
  *
  * A Lua allocator function for use with LuaJIT on a 64-bit platform. Pass 
@@ -126,4 +129,4 @@ static void *luasandbox_passthru_alloc(void *ud, void *ptr, size_t osize, size_t
 	return obj->alloc.old_alloc(obj->alloc.old_alloc_ud, ptr, osize, nsize);
 }
 /* }}} */
-
+#endif
