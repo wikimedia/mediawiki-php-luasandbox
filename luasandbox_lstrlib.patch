@@ -1,6 +1,19 @@
---- lstrlib.c	2012-07-09 12:00:43.465130991 +1000
-+++ luasandbox_lstrlib.c	2012-07-09 12:00:29.448916293 +1000
-@@ -176,6 +176,7 @@
+--- lstrlib.c	2013-02-27 17:27:45.973598391 -0800
++++ luasandbox_lstrlib.c	2013-02-27 17:58:33.809497263 -0800
+@@ -19,6 +19,12 @@
+ #include "lauxlib.h"
+ #include "lualib.h"
+ 
++#ifdef LUAI_MAXCALLS
++#define LUASANDBOX_MAX_MATCH_DEPTH LUAI_MAXCALLS
++#else
++#define LUASANDBOX_MAX_MATCH_DEPTH 20000
++#endif
++
+ 
+ /* macro to `unsign' a character */
+ #define uchar(c)        ((unsigned char)(c))
+@@ -176,6 +182,7 @@
      const char *init;
      ptrdiff_t len;
    } capture[LUA_MAXCAPTURES];
@@ -8,11 +21,12 @@
  } MatchState;
  
  
-@@ -361,24 +362,43 @@
+@@ -361,24 +368,44 @@
    else return NULL;
  }
  
 +static int do_nothing(lua_State * L) {
++	return 0;
 +}
 +
 +#define MATCH_RETURN(r) { \
@@ -29,7 +43,7 @@
 +	lua_call(ms->L, 0, 0);
 +  }
 +
-+  if (++ms->depth > LUAI_MAXCALLS) {
++  if (++ms->depth > LUASANDBOX_MAX_MATCH_DEPTH) {
 +    luaL_error(ms->L, "recursion depth limit exceeded");
 +  }
    init: /* using goto's to optimize tail recursion */
@@ -59,7 +73,7 @@
            p+=4; goto init;  /* else return match(ms, s, p+4); */
          }
          case 'f': {  /* frontier? */
-@@ -390,13 +410,13 @@
+@@ -390,13 +417,13 @@
            ep = classend(ms, p);  /* points to what is next */
            previous = (s == ms->src_init) ? '\0' : *(s-1);
            if (matchbracketclass(uchar(previous), p, ep-1) ||
@@ -75,7 +89,7 @@
              p+=2; goto init;  /* else return match(ms, s, p+2) */
            }
            goto dflt;  /* case default */
-@@ -404,12 +424,12 @@
+@@ -404,12 +431,12 @@
        }
      }
      case '\0': {  /* end of pattern */
@@ -92,7 +106,7 @@
      }
      default: dflt: {  /* it is a pattern item */
        const char *ep = classend(ms, p);  /* points to what is next */
-@@ -418,20 +438,20 @@
+@@ -418,20 +445,20 @@
          case '?': {  /* optional */
            const char *res;
            if (m && ((res=match(ms, s+1, ep+1)) != NULL))
@@ -118,7 +132,7 @@
            s++; p=ep; goto init;  /* else return match(ms, s+1, ep); */
          }
        }
-@@ -439,7 +459,7 @@
+@@ -439,7 +466,7 @@
    }
  }
  
@@ -127,7 +141,7 @@
  
  static const char *lmemfind (const char *s1, size_t l1,
                                 const char *s2, size_t l2) {
-@@ -516,6 +536,7 @@
+@@ -516,6 +543,7 @@
      ms.L = L;
      ms.src_init = s;
      ms.src_end = s+l1;
@@ -135,7 +149,7 @@
      do {
        const char *res;
        ms.level = 0;
-@@ -554,6 +575,7 @@
+@@ -554,6 +582,7 @@
    ms.L = L;
    ms.src_init = s;
    ms.src_end = s+ls;
@@ -143,7 +157,7 @@
    for (src = s + (size_t)lua_tointeger(L, lua_upvalueindex(3));
         src <= ms.src_end;
         src++) {
-@@ -658,6 +680,7 @@
+@@ -658,6 +687,7 @@
    ms.L = L;
    ms.src_init = src;
    ms.src_end = src+srcl;
@@ -151,7 +165,7 @@
    while (n < max_s) {
      const char *e;
      ms.level = 0;
-@@ -859,7 +882,7 @@
+@@ -859,7 +889,7 @@
  /*
  ** Open string library
  */

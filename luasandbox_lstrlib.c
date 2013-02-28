@@ -369,6 +369,7 @@ static const char *match_capture (MatchState *ms, const char *s, int l) {
 }
 
 static int do_nothing(lua_State * L) {
+	return 0;
 }
 
 #define MATCH_RETURN(r) { \
