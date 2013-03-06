@@ -35,6 +35,9 @@ void luasandbox_timer_start(luasandbox_timer_set * lts);
 void luasandbox_timer_stop(luasandbox_timer_set * lts);
 void luasandbox_timer_destroy(luasandbox_timer_set * lts);
 void luasandbox_timer_get_usage(luasandbox_timer_set * lts, struct timespec * ts);
+void luasandbox_timer_pause(luasandbox_timer_set * lts);
+void luasandbox_timer_unpause(luasandbox_timer_set * lts);
+int luasandbox_timer_is_paused(luasandbox_timer_set * lts);
 void luasandbox_timer_timeout_error(lua_State *L);
 int luasandbox_timer_is_expired(luasandbox_timer_set * lts);
 

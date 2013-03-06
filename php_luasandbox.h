@@ -46,6 +46,8 @@ PHP_METHOD(LuaSandbox, getMemoryUsage);
 PHP_METHOD(LuaSandbox, getPeakMemoryUsage);
 PHP_METHOD(LuaSandbox, setCPULimit);
 PHP_METHOD(LuaSandbox, getCPUUsage);
+PHP_METHOD(LuaSandbox, pauseUsageTimer);
+PHP_METHOD(LuaSandbox, unpauseUsageTimer);
 PHP_METHOD(LuaSandbox, enableProfiler);
 PHP_METHOD(LuaSandbox, disableProfiler);
 PHP_METHOD(LuaSandbox, getProfilerFunctionReport);

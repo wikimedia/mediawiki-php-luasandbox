@@ -20,7 +20,9 @@ char luasandbox_timeout_message[] = "The maximum execution time for this script 
 void luasandbox_timer_install_handler(struct sigaction * oldact) {}
 void luasandbox_timer_remove_handler(struct sigaction * oldact) {}
 void luasandbox_timer_create(luasandbox_timer_set * lts,
-		php_luasandbox_obj * sandbox) {}
+		php_luasandbox_obj * sandbox) {
+	lts->is_paused = 0;
+}
 void luasandbox_timer_set_limits(luasandbox_timer_set * lts,
 		struct timespec * normal_timeout, 
 		struct timespec * emergency_timeout) {}
@@ -34,6 +36,17 @@ void luasandbox_timer_destroy(luasandbox_timer_set * lts) {}
 void luasandbox_timer_get_usage(luasandbox_timer_set * lts, struct timespec * ts) {
 	ts->tv_sec = ts->tv_nsec = 0;
 }
+
+void luasandbox_timer_pause(luasandbox_timer_set * lts) {
+	lts->is_paused = 1;
+}
+void luasandbox_timer_unpause(luasandbox_timer_set * lts) {
+	lts->is_paused = 0;
+}
+int luasandbox_timer_is_paused(luasandbox_timer_set * lts) {
+	return lts->is_paused;
+}
+
 void luasandbox_timer_timeout_error(lua_State *L) {}
 int luasandbox_timer_is_expired(luasandbox_timer_set * lts) {
 	return 0;
@@ -122,12 +135,12 @@ static void luasandbox_timer_handle_signal(int signo, siginfo_t * info, void * c
 	data = (luasandbox_timer_callback_data*)info->si_value.sival_ptr;
 
 	lua_State * L = data->sandbox->state;
-	data->sandbox->timed_out = 1;
 
 	if (data->type == LUASANDBOX_TIMER_EMERGENCY) {
 		sigset_t set;
 		sigemptyset(&set);
 		sigprocmask(SIG_SETMASK, &set, NULL);
+		data->sandbox->timed_out = 1;
 		data->sandbox->emergency_timed_out = 1;
 		if (data->sandbox->in_php) {
 			// The whole PHP request context is dirty now. We need to kill it,
@@ -141,9 +154,22 @@ static void luasandbox_timer_handle_signal(int signo, siginfo_t * info, void * c
 			lua_error(L);
 		}
 	} else {
-		// Set a hook which will terminate the script execution in a graceful way
-		lua_sethook(L, luasandbox_timer_timeout_hook,
-			LUA_MASKCOUNT | LUA_MASKCALL | LUA_MASKRET | LUA_MASKLINE, 1);
+		luasandbox_timer_set * lts = &data->sandbox->timer;
+		if (luasandbox_timer_is_paused(lts)) {
+			// The timer is paused. luasandbox_timer_unpause will reschedule when unpaused.
+			clock_gettime(LUASANDBOX_CLOCK_ID, &lts->normal_expired_at);
+		} else if (!luasandbox_timer_is_zero(&lts->pause_delta)) {
+			// The timer is not paused, but we have a pause delta. Reschedule.
+			luasandbox_timer_subtract(&lts->usage, &lts->pause_delta);
+			lts->normal_remaining = lts->pause_delta;
+			luasandbox_timer_zero(&lts->pause_delta);
+			luasandbox_timer_set_one_time(&lts->normal_timer, &lts->normal_remaining);
+		} else {
+			// Set a hook which will terminate the script execution in a graceful way
+			data->sandbox->timed_out = 1;
+			lua_sethook(L, luasandbox_timer_timeout_hook,
+				LUA_MASKCOUNT | LUA_MASKCALL | LUA_MASKRET | LUA_MASKLINE, 1);
+		}
 	}
 }
 
@@ -356,6 +382,9 @@ void luasandbox_timer_create(luasandbox_timer_set * lts, php_luasandbox_obj * sa
 	luasandbox_timer_zero(&lts->normal_remaining);
 	luasandbox_timer_zero(&lts->emergency_limit);
 	luasandbox_timer_zero(&lts->emergency_remaining);
+	luasandbox_timer_zero(&lts->pause_start);
+	luasandbox_timer_zero(&lts->pause_delta);
+	luasandbox_timer_zero(&lts->normal_expired_at);
 	luasandbox_timer_zero(&lts->profiler_period);
 	lts->is_running = 0;
 	lts->normal_running = 0;
@@ -369,14 +398,20 @@ void luasandbox_timer_set_limits(luasandbox_timer_set * lts,
 		struct timespec * emergency_timeout)
 {
 	int was_running = 0;
+	int was_paused = luasandbox_timer_is_paused(lts);
 	if (lts->is_running) {
 		was_running = 1;
 		luasandbox_timer_stop(lts);
 	}
 	lts->normal_remaining = lts->normal_limit = *normal_timeout;
 	lts->emergency_remaining = lts->emergency_limit = *emergency_timeout;
+	luasandbox_timer_zero(&lts->normal_expired_at);
+
 	if (was_running) {
 		luasandbox_timer_start(lts);
+	}
+	if (was_paused) {
+		luasandbox_timer_pause(lts);
 	}
 }
 
@@ -438,6 +473,10 @@ static void luasandbox_timer_set_one_time(luasandbox_timer * lt, struct timespec
 	struct itimerspec its;
 	luasandbox_timer_zero(&its.it_interval);
 	its.it_value = *ts;
+	if (luasandbox_timer_is_zero(&its.it_value)) {
+		// Sanity check: make sure there is at least 1 nanosecond on the timer.
+		its.it_value.tv_nsec = 1;
+	}
 	timer_settime(lt->timer, 0, &its, NULL);
 }
 
@@ -451,13 +490,18 @@ static void luasandbox_timer_set_periodic(luasandbox_timer * lt, struct timespec
 
 void luasandbox_timer_stop(luasandbox_timer_set * lts)
 {
-	struct timespec usage;
+	struct timespec usage, delta;
 
 	if (lts->is_running) {
 		lts->is_running = 0;
 	} else {
 		return;
 	}
+
+	// Make sure timers aren't paused, and extract the delta
+	luasandbox_timer_unpause(lts);
+	delta = lts->pause_delta;
+	luasandbox_timer_zero(&lts->pause_delta);
 
 	// Stop the interval timers and save the time remaining
 	if (lts->emergency_running) {
@@ -467,6 +511,7 @@ void luasandbox_timer_stop(luasandbox_timer_set * lts)
 	if (lts->normal_running) {
 		luasandbox_timer_stop_one(&lts->normal_timer, &lts->normal_remaining);
 		lts->normal_running = 0;
+		luasandbox_timer_add(&lts->normal_remaining, &delta);
 	}
 
 	// Update the usage
@@ -474,6 +519,7 @@ void luasandbox_timer_stop(luasandbox_timer_set * lts)
 	clock_gettime(LUASANDBOX_CLOCK_ID, &usage);
 	luasandbox_timer_subtract(&usage, &lts->usage_start);
 	luasandbox_timer_add(&lts->usage, &usage);
+	luasandbox_timer_subtract(&lts->usage, &delta);
 }
 
 static void luasandbox_timer_stop_one(luasandbox_timer * lt, struct timespec * remaining)
@@ -482,10 +528,13 @@ static void luasandbox_timer_stop_one(luasandbox_timer * lt, struct timespec * r
 	struct itimerspec its;
 	timer_gettime(lt->timer, &its);
 	if (remaining) {
-		remaining->tv_sec = its.it_value.tv_sec;
-		remaining->tv_nsec = its.it_value.tv_nsec;
+		*remaining = its.it_value;
 	}
-	luasandbox_timer_set_one_time(lt, &zero);
+
+	its.it_value = zero;
+	its.it_interval = zero;
+	timer_settime(lt->timer, 0, &its, NULL);
+
 	if (lt->cbdata.type == LUASANDBOX_TIMER_PROFILER) {
 		// Invalidate the cbdata, delete the timer
 		lt->cbdata.sandbox = NULL;
@@ -517,10 +566,67 @@ static void luasandbox_timer_stop_one(luasandbox_timer * lt, struct timespec * r
 
 void luasandbox_timer_get_usage(luasandbox_timer_set * lts, struct timespec * ts)
 {
+	struct timespec delta;
+
 	if (lts->is_running) {
 		luasandbox_update_usage(lts);
 	}
 	*ts = lts->usage;
+	// Subtract the pause delta from the usage
+	luasandbox_timer_subtract(ts, &lts->pause_delta);
+	// If currently paused, subtract the time-since-pause too
+	if (!luasandbox_timer_is_zero(&lts->pause_start)) {
+		clock_gettime(LUASANDBOX_CLOCK_ID, &delta);
+		luasandbox_timer_subtract(&delta, &lts->pause_start);
+		luasandbox_timer_subtract(ts, &delta);
+	}
+}
+
+void luasandbox_timer_pause(luasandbox_timer_set * lts) {
+	if (luasandbox_timer_is_zero(&lts->pause_start)) {
+		clock_gettime(LUASANDBOX_CLOCK_ID, &lts->pause_start);
+	}
+}
+
+void luasandbox_timer_unpause(luasandbox_timer_set * lts) {
+	struct timespec delta;
+
+	if (!luasandbox_timer_is_zero(&lts->pause_start)) {
+		clock_gettime(LUASANDBOX_CLOCK_ID, &delta);
+		luasandbox_timer_subtract(&delta, &lts->pause_start);
+
+		if (luasandbox_timer_is_zero(&lts->normal_expired_at)) {
+			// Easy case, timer didn't expire while paused. Throw the whole delta
+			// into pause_delta for later timer and usage adjustment.
+			luasandbox_timer_add(&lts->pause_delta, &delta);
+			luasandbox_timer_zero(&lts->pause_start);
+		} else {
+			// If the normal limit expired, we need to fold the whole
+			// accumulated delta into usage immediately, and then restart the
+			// timer with the portion before the expiry.
+
+			// adjust usage
+			luasandbox_timer_subtract(&lts->usage, &delta);
+			luasandbox_timer_subtract(&lts->usage, &lts->pause_delta);
+
+			// calculate timer delta
+			delta = lts->normal_expired_at;
+			luasandbox_timer_subtract(&delta, &lts->pause_start);
+			luasandbox_timer_add(&delta, &lts->pause_delta);
+
+			// Zero out pause vars
+			luasandbox_timer_zero(&lts->pause_start);
+			luasandbox_timer_zero(&lts->pause_delta);
+
+			// Restart timer
+			lts->normal_remaining = delta;
+			luasandbox_timer_set_one_time(&lts->normal_timer, &lts->normal_remaining);
+		}
+	}
+}
+
+int luasandbox_timer_is_paused(luasandbox_timer_set * lts) {
+	return !luasandbox_timer_is_zero(&lts->pause_start);
 }
 
 int luasandbox_timer_is_expired(luasandbox_timer_set * lts)

@@ -105,6 +105,12 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_getCPUUsage, 0)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_pauseUsageTimer, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_unpauseUsageTimer, 0)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_enableProfiler, 0)
 	ZEND_ARG_INFO(0, period)
 ZEND_END_ARG_INFO()
@@ -156,6 +162,8 @@ const zend_function_entry luasandbox_methods[] = {
 	PHP_ME(LuaSandbox, getPeakMemoryUsage, arginfo_luasandbox_getPeakMemoryUsage, 0)
 	PHP_ME(LuaSandbox, setCPULimit, arginfo_luasandbox_setCPULimit, 0)
 	PHP_ME(LuaSandbox, getCPUUsage, arginfo_luasandbox_getCPUUsage, 0)
+	PHP_ME(LuaSandbox, pauseUsageTimer, arginfo_luasandbox_pauseUsageTimer, 0)
+	PHP_ME(LuaSandbox, unpauseUsageTimer, arginfo_luasandbox_unpauseUsageTimer, 0)
 	PHP_ME(LuaSandbox, enableProfiler, arginfo_luasandbox_enableProfiler, 0)
 	PHP_ME(LuaSandbox, disableProfiler, arginfo_luasandbox_disableProfiler, 0)
 	PHP_ME(LuaSandbox, getProfilerFunctionReport, arginfo_luasandbox_getProfilerFunctionReport, 0)
@@ -338,6 +346,7 @@ static zend_object_value luasandbox_new(zend_class_entry *ce TSRMLS_DC)
 	memset(sandbox, 0, sizeof(php_luasandbox_obj));
 	zend_object_std_init(&sandbox->std, ce TSRMLS_CC);
 	sandbox->alloc.memory_limit = (size_t)-1;
+	sandbox->allow_pause = 1;
 
 	// Initialise the Lua state
 	sandbox->state = luasandbox_newstate(sandbox TSRMLS_CC);
@@ -527,7 +536,8 @@ static void luasandbox_load_helper(int binary, INTERNAL_FUNCTION_PARAMETERS)
 	lua_State * L;
 	int have_mark;
 	php_luasandbox_obj * sandbox;
-	
+	int was_paused;
+
 	sandbox = (php_luasandbox_obj*) 
 		zend_object_store_get_object(this_ptr TSRMLS_CC);
 	L = sandbox->state;
@@ -564,8 +574,19 @@ static void luasandbox_load_helper(int binary, INTERNAL_FUNCTION_PARAMETERS)
 		RETURN_FALSE;
 	}
 
+	// Make sure this is counted against the Lua usage time limit
+	was_paused = luasandbox_timer_is_paused(&sandbox->timer);
+	luasandbox_timer_unpause(&sandbox->timer);
+
 	// Parse the string into a function on the stack
 	status = luaL_loadbuffer(L, code, codeLength, chunkName);
+
+	// If the timers were paused before, re-pause them now
+	if (was_paused) {
+		luasandbox_timer_pause(&sandbox->timer);
+	}
+
+	// Handle any error from luaL_loadbuffer
 	if (status != 0) {
 		luasandbox_handle_error(sandbox, status TSRMLS_CC);
 		return;
@@ -835,6 +856,60 @@ PHP_METHOD(LuaSandbox, getCPUUsage)
 
 	luasandbox_timer_get_usage(&sandbox->timer, &ts);
 	RETURN_DOUBLE(ts.tv_sec + 1e-9 * ts.tv_nsec);
+}
+/* }}} */
+
+/** {{{ proto bool LuaSandbox::pauseUsageTimer()
+ *
+ * Pause the CPU usage timer, and the "normal" time limit set by LuaSandbox::setCPULimit.
+ * Does not pause the "emergency" time limit set by LuaSandbox::setCPULimit.
+ *
+ * This only has effect when called from within a callback from Lua. When
+ * execution returns to Lua, the timers will be automatically unpaused. If a
+ * new call into Lua is made, the timers will be unpaused for the duration of
+ * that call.
+ *
+ * If a PHP callback calls into Lua again with timers not paused, and then that
+ * Lua function calls into PHP again, the second PHP call will not be able to
+ * pause the timers. The logic is that even though the second PHP call would
+ * avoid counting the CPU usage against the limit, the first call still counts
+ * it.
+ *
+ * Returns true if the timers are now paused, false if not.
+ */
+PHP_METHOD(LuaSandbox, pauseUsageTimer)
+{
+	php_luasandbox_obj * sandbox = (php_luasandbox_obj*)
+		zend_object_store_get_object(getThis() TSRMLS_CC);
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "") == FAILURE) {
+		RETURN_FALSE;
+	}
+
+	if ( !sandbox->allow_pause || !sandbox->in_lua ) {
+		RETURN_FALSE;
+	}
+
+	luasandbox_timer_pause(&sandbox->timer);
+	RETURN_TRUE;
+}
+/* }}} */
+
+/** {{{ proto void LuaSandbox::unpauseUsageTimer()
+ *
+ * Unpause timers paused by LuaSandbox::pauseUsageTimer.
+ */
+PHP_METHOD(LuaSandbox, unpauseUsageTimer)
+{
+	php_luasandbox_obj * sandbox = (php_luasandbox_obj*)
+		zend_object_store_get_object(getThis() TSRMLS_CC);
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "") == FAILURE) {
+		RETURN_FALSE;
+	}
+
+	luasandbox_timer_unpause(&sandbox->timer);
+	RETURN_NULL();
 }
 /* }}} */
 
@@ -1191,6 +1266,8 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 	int timer_started = 0;
 	int i, numResults;
 	zval * old_zval;
+	int was_paused;
+	int old_allow_pause;
 
 	// Check to see if the value is a valid function
 	if (lua_type(L, -1) != LUA_TFUNCTION) {
@@ -1237,11 +1314,24 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 	old_zval = sandbox->current_zval;
 	sandbox->current_zval = sandbox_zval;
 
+	// Make sure this is counted against the Lua usage time limit, and set the
+	// allow_pause flag.
+	was_paused = luasandbox_timer_is_paused(&sandbox->timer);
+	luasandbox_timer_unpause(&sandbox->timer);
+	old_allow_pause = sandbox->allow_pause;
+	sandbox->allow_pause = ( !sandbox->in_lua || was_paused );
+
 	// Call the function
 	sandbox->in_lua++;
 	status = lua_pcall(L, numArgs, LUA_MULTRET, origTop + 1);
 	sandbox->in_lua--;
 	sandbox->current_zval = old_zval;
+
+	// Restore pause state
+	sandbox->allow_pause = old_allow_pause;
+	if (was_paused) {
+		luasandbox_timer_pause(&sandbox->timer);
+	}
 
 	// Stop the timer
 	if (timer_started) {
@@ -1453,6 +1543,7 @@ int luasandbox_call_php(lua_State * L)
 	zval **pointers;
 	zval ***double_pointers;
 	int num_results = 0;
+	int status;
 	Bucket *bucket;	
 	TSRMLS_FETCH();
 
@@ -1487,9 +1578,16 @@ int luasandbox_call_php(lua_State * L)
 	// zend_fcall_info_argp()
 	zend_fcall_info_args_restore(&fci, top, double_pointers);
 
+	// Sanity check, timers should never be paused at this point
+	assert(!luasandbox_timer_is_paused(&intern->timer));
+
 	// Call the function
-	if (zend_call_function(&fci, &fcc TSRMLS_CC) == SUCCESS 
-		&& fci.retval_ptr_ptr && *fci.retval_ptr_ptr) 
+	status = zend_call_function(&fci, &fcc TSRMLS_CC);
+
+	// Automatically unpause now that PHP has returned
+	luasandbox_timer_unpause(&intern->timer);
+
+	if (status == SUCCESS && fci.retval_ptr_ptr && *fci.retval_ptr_ptr)
 	{
 		// Push the return values back to Lua
 		if (Z_TYPE_PP(fci.retval_ptr_ptr) == IS_NULL) {

@@ -28,6 +28,8 @@ typedef struct {
 	struct timespec normal_limit, normal_remaining;
 	struct timespec emergency_limit, emergency_remaining;
 	struct timespec usage_start, usage;
+	struct timespec pause_start, pause_delta;
+	struct timespec normal_expired_at;
 	struct timespec profiler_period;
 	struct _php_luasandbox_obj * sandbox;
 	int is_running;
@@ -58,6 +60,7 @@ typedef struct {
 	struct timespec profiler_period;
 	HashTable * function_counts;
 	long total_count;
+	int is_paused;
 } luasandbox_timer_set;
 
 #endif /*CLOCK_REALTIME*/
@@ -96,6 +99,7 @@ struct _php_luasandbox_obj {
 	luasandbox_timer_set timer;
 	int function_index;
 	unsigned int random_seed;
+	int allow_pause;
 };
 typedef struct _php_luasandbox_obj php_luasandbox_obj;
 
