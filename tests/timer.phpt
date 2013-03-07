@@ -10,7 +10,7 @@ $lua = <<<LUA
 	lua = {}
 
 	function lua.expensive()
-		local t = os.clock() + 0.15
+		local t = os.clock() + 0.2
 		while os.clock() < t do end
 	end
 
@@ -21,7 +21,7 @@ $lua = <<<LUA
 
 	function test_pause_overrun()
 		php.overrun();
-		local t = os.clock() + 0.15
+		local t = os.clock() + 0.2
 		while os.clock() < t do end
 	end
 
@@ -31,7 +31,7 @@ $lua = <<<LUA
 LUA;
 
 function expensive() {
-	$t = microtime( 1 ) + 0.15;
+	$t = microtime( 1 ) + 0.2;
 	while ( microtime( 1 ) < $t ) {
 	}
 }
@@ -39,7 +39,7 @@ function expensive() {
 function paused() {
 	global $sandbox;
 	$sandbox->pauseUsageTimer();
-	$t = microtime( 1 ) + 0.15;
+	$t = microtime( 1 ) + 0.2;
 	while ( microtime( 1 ) < $t ) {
 	}
 }
@@ -48,7 +48,7 @@ function unpaused() {
 	global $sandbox;
 	$sandbox->pauseUsageTimer();
 	$sandbox->unpauseUsageTimer();
-	$t = microtime( 1 ) + 0.15;
+	$t = microtime( 1 ) + 0.2;
 	while ( microtime( 1 ) < $t ) {
 	}
 }
@@ -65,7 +65,7 @@ function resetLimit() {
 	global $sandbox;
 	$sandbox->pauseUsageTimer();
 	$sandbox->setCPULimit( 0.1 );
-	$t = microtime( 1 ) + 0.15;
+	$t = microtime( 1 ) + 0.2;
 	while ( microtime( 1 ) < $t ) {
 	}
 }
@@ -115,7 +115,7 @@ function doTest( $name ) {
 	}
 	$t1 = microtime( 1 ) - $t0;
 	$u1 = $sandbox->getCPUUsage() - $u0;
-	printf( "%3s (%.2fs of %.2fs)\n", $timeout, $u1, $t1 );
+	printf( "%3s (%.1fs of %.1fs)\n", $timeout, $u1, $t1 );
 }
 
 doTest( 'Lua usage counted', 'lua.expensive' );
@@ -136,18 +136,18 @@ doTest( 'paused-PHP to paused-PHP to paused-PHP counted', 'php.pauseCall', 'php.
 doTest( 'paused-PHP to PHP to paused-PHP counted', 'php.pauseCall', 'php.call', 'php.paused' );
 
 --EXPECTF--
-Lua usage counted:                              yes (0.10s of %fs)
-PHP usage counted:                              yes (0.15s of %fs)
-Paused PHP usage counted:                        no (0.00s of %fs)
-Unpause works:                                  yes (0.15s of %fs)
-Auto-unpause works:                             yes (0.10s of %fs)
-Reset limit unpauses:                            no (0.00s of %fs)
-Pause overrun prevented:                        yes (0.10s of %fs)
-PHP to Lua counted:                             yes (0.10s of %fs)
-PHP to paused-PHP counted:                      yes (0.15s of %fs)
-PHP to paused-PHP to paused-PHP counted:        yes (0.15s of %fs)
-paused-PHP to Lua counted:                      yes (0.10s of %fs)
-paused-PHP to PHP counted:                      yes (0.15s of %fs)
-paused-PHP to paused-PHP counted:                no (0.00s of %fs)
-paused-PHP to paused-PHP to paused-PHP counted:  no (0.00s of %fs)
-paused-PHP to PHP to paused-PHP counted:        yes (0.15s of %fs)
+Lua usage counted:                              yes (0.1s of %fs)
+PHP usage counted:                              yes (0.2s of %fs)
+Paused PHP usage counted:                        no (0.0s of %fs)
+Unpause works:                                  yes (0.2s of %fs)
+Auto-unpause works:                             yes (0.1s of %fs)
+Reset limit unpauses:                            no (0.0s of %fs)
+Pause overrun prevented:                        yes (0.1s of %fs)
+PHP to Lua counted:                             yes (0.1s of %fs)
+PHP to paused-PHP counted:                      yes (0.2s of %fs)
+PHP to paused-PHP to paused-PHP counted:        yes (0.2s of %fs)
+paused-PHP to Lua counted:                      yes (0.1s of %fs)
+paused-PHP to PHP counted:                      yes (0.2s of %fs)
+paused-PHP to paused-PHP counted:                no (0.0s of %fs)
+paused-PHP to paused-PHP to paused-PHP counted:  no (0.0s of %fs)
+paused-PHP to PHP to paused-PHP counted:        yes (0.2s of %fs)
