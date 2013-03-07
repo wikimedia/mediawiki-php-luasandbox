@@ -88,6 +88,16 @@ static inline void luasandbox_enter_php(lua_State * L, php_luasandbox_obj * inte
 }
 /* }}} */
 
+/**
+ * {{ luasandbox_enter_php_ignore_timeouts
+ *
+ * Like luasandbox_enter_php except that no error is raised if a timeout has occurred
+ */
+static inline void luasandbox_enter_php_ignore_timeouts(lua_State * L, php_luasandbox_obj * intern)
+{
+	intern->in_php ++;
+}
+
 /** {{{ luasandbox_leave_php
  *
  * This function must be called after luasandbox_enter_php, before the callback 

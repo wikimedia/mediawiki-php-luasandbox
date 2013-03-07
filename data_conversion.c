@@ -113,7 +113,10 @@ static int luasandbox_free_zval_userdata(lua_State * L)
 {
 	zval ** zpp = (zval**)lua_touserdata(L, 1);
 	php_luasandbox_obj * intern = luasandbox_get_php_obj(L);
-	luasandbox_enter_php(L, intern);
+
+	// Don't abort if the request has timed out, we need to be able to clean up
+	luasandbox_enter_php_ignore_timeouts(L, intern);
+
 	if (zpp && *zpp) {
 		zval_ptr_dtor(zpp);
 	}
