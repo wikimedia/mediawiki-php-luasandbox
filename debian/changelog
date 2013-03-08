@@ -1,3 +1,10 @@
+php-luasandbox (1.4-1) precise-wikimedia; urgency=low
+
+  * Add support for pausing timers
+  * Don't leak zvals when a timer is hit
+
+ -- Tim Starling <tstarling@wikimedia.org>  Fri, 08 Mar 2013 16:15:57 +1100
+
 php-luasandbox (1.3-1) precise-wikimedia; urgency=low
 
   * Fix missing return value causing data corruption
