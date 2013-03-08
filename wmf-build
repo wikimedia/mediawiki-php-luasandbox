@@ -1,0 +1,63 @@
+#!/bin/bash
+
+DISTRO_VERSION=precise
+
+echo '
+	set -e
+	BUILDDIR="`mktemp -d --tmpdir=/mnt/tmp`"
+	cd /mnt/src/luasandbox
+	git pull
+	git archive --prefix=luasandbox/ master | tar -xC "$BUILDDIR"
+	cd "$BUILDDIR"
+	dpkg-source -b luasandbox
+	/pb/build-'$DISTRO_VERSION' *.dsc
+	perl -ne '\''if (/^Version: (\S*)/) {print "$1\n";}'\'' *.dsc > /mnt/src/luasandbox-version
+' | ssh php-packaging.pmtpa.wmflabs sudo bash
+
+if [ $? -ne 0 ]; then
+	echo Build failed
+	exit 1
+fi
+
+VERSION=`ssh php-packaging.pmtpa.wmflabs cat /mnt/src/luasandbox-version 2>/dev/null`
+
+ssh php-packaging.pmtpa.wmflabs "
+	cd /pb/result/$DISTRO_VERSION
+	tar -c php-luasandbox_$VERSION*
+" 2>/dev/null | tar -x 
+
+echo "OK to upload version $VERSION?"
+select ok in yes no ; do
+	if [ "$ok" == no ]; then
+		exit 1
+	fi
+	if [ "$ok" == yes ]; then
+		break
+	fi
+done
+
+# ~/.dupload.conf could contain:
+#
+# package config;
+# 
+# $default_host = "wikimedia";
+# 
+# $cfg{'wikimedia'} = {
+# 	fqdn => 'brewster.wikimedia.org',
+# 	method => 'rsync',
+# 	login => 'root',
+# 	incoming => '/srv/wikimedia/incoming',
+# };
+# 
+# 1;
+
+if ! dupload php-luasandbox_$VERSION*.changes ; then
+	echo Upload failed
+	exit 1
+fi
+
+ssh root@brewster.wikimedia.org "
+	cd /srv/wikimedia/incoming
+	reprepro include $DISTRO_VERSION-wikimedia php-luasandbox_$VERSION*.changes
+"
+
