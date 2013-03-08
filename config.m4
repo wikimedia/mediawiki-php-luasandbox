@@ -13,9 +13,12 @@ if test "$PHP_LUASANDBOX" != "no"; then
 
 	dnl We need lua or fallback to luajit.
 	dnl Under debian package is known as 'lua5.1'
+	dnl Under freebsd package is known as 'lua-5.1'
 	PKG_CHECK_MODULES([LUA], [lua],, [
 		PKG_CHECK_MODULES([LUA], [lua5.1],, [
-			PKG_CHECK_MODULES([LUA], [luajit])
+			PKG_CHECK_MODULES([LUA], [lua-5.1],, [
+				PKG_CHECK_MODULES([LUA], [luajit])
+			])
 		])
 	])
 
