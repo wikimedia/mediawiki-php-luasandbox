@@ -1,3 +1,9 @@
+php-luasandbox (1.5-1) precise-wikimedia; urgency=low
+
+  * Fix unpause bug
+
+ -- Tim Starling <tstarling@wikimedia.org>  Wed, 13 Mar 2013 10:12:22 +1100
+
 php-luasandbox (1.4-1) precise-wikimedia; urgency=low
 
   * Add support for pausing timers
