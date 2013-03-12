@@ -614,9 +614,10 @@ void luasandbox_timer_unpause(luasandbox_timer_set * lts) {
 			luasandbox_timer_subtract(&delta, &lts->pause_start);
 			luasandbox_timer_add(&delta, &lts->pause_delta);
 
-			// Zero out pause vars
+			// Zero out pause vars and expired timestamp (since we handled it)
 			luasandbox_timer_zero(&lts->pause_start);
 			luasandbox_timer_zero(&lts->pause_delta);
+			luasandbox_timer_zero(&lts->normal_expired_at);
 
 			// Restart timer
 			lts->normal_remaining = delta;
