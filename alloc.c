@@ -18,9 +18,10 @@
 
 static inline int luasandbox_update_memory_accounting(php_luasandbox_alloc * obj, 
 	size_t osize, size_t nsize);
-static void *luasandbox_php_alloc(void *ud, void *ptr, size_t osize, size_t nsize);
 #ifdef LUASANDBOX_LJ_64
 static void *luasandbox_passthru_alloc(void *ud, void *ptr, size_t osize, size_t nsize);
+#else
+static void *luasandbox_php_alloc(void *ud, void *ptr, size_t osize, size_t nsize);
 #endif
 
 lua_State * luasandbox_alloc_new_state(php_luasandbox_alloc * alloc, php_luasandbox_obj * sandbox)
@@ -81,6 +82,7 @@ static inline int luasandbox_update_memory_accounting(php_luasandbox_alloc * all
 }
 /* }}} */
 
+#ifndef LUASANDBOX_LJ_64
 /** {{{ luasandbox_php_alloc
  *
  * The Lua allocator function. Use PHP's request-local allocator as a backend.
@@ -111,6 +113,7 @@ static void *luasandbox_php_alloc(void *ud, void *ptr, size_t osize, size_t nsiz
 	return nptr;
 }
 /* }}} */
+#endif
 
 #ifdef LUASANDBOX_LJ_64
 /** {{{ luasandbox_passthru_alloc

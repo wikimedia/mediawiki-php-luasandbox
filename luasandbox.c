@@ -15,6 +15,7 @@
 #include "php_luasandbox.h"
 #include "luasandbox_timer.h"
 #include "ext/standard/php_smart_str.h"
+#include "luasandbox_version.h"
 
 // Compatability for PHP <= 5.3.6
 #ifndef ZEND_FE_END
@@ -77,6 +78,9 @@ zend_class_entry *luasandboxfunction_ce;
 ZEND_DECLARE_MODULE_GLOBALS(luasandbox);
 
 /** {{{ arginfo */
+ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_getVersionInfo, 0)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_loadString, 0)
 	ZEND_ARG_INFO(0, code)
 	ZEND_ARG_INFO(0, chunkName)
@@ -155,6 +159,7 @@ const zend_function_entry luasandbox_functions[] = {
 };
 
 const zend_function_entry luasandbox_methods[] = {
+	PHP_ME(LuaSandbox, getVersionInfo, arginfo_luasandbox_getVersionInfo, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
 	PHP_ME(LuaSandbox, loadString, arginfo_luasandbox_loadString, 0)
 	PHP_ME(LuaSandbox, loadBinary, arginfo_luasandbox_loadBinary, 0)
 	PHP_ME(LuaSandbox, setMemoryLimit, arginfo_luasandbox_setMemoryLimit, 0)
@@ -200,7 +205,7 @@ zend_module_entry luasandbox_module_entry = {
 	NULL, /* RINIT */
 	PHP_RSHUTDOWN(luasandbox), /* RSHUTDOWN */
 	PHP_MINFO(luasandbox),
-	"0.1",
+	LUASANDBOX_VERSION,
 	PHP_MODULE_GLOBALS(luasandbox),
 	PHP_GINIT(luasandbox),
 	PHP_GSHUTDOWN(luasandbox),
@@ -603,6 +608,22 @@ static void luasandbox_load_helper(int binary, INTERNAL_FUNCTION_PARAMETERS)
 	// Balance the stack
 	lua_pop(L, 1);
 }
+/* }}} */
+
+/** {{{ proto static array LuaSandbox::getVersionInfo()
+ *
+ * Return the versions of LuaSandbox and Lua, as an associative array.
+ */
+PHP_METHOD(LuaSandbox, getVersionInfo)
+{
+	array_init_size(return_value, 2);
+	add_assoc_string(return_value, "LuaSandbox", LUASANDBOX_VERSION, 1);
+	add_assoc_string(return_value, "Lua", LUA_RELEASE, 1);
+#ifdef LUAJIT_VERSION
+	add_assoc_string(return_value, "LuaJIT", LUAJIT_VERSION, 1);
+#endif
+}
+
 /* }}} */
 
 /** {{{ proto LuaSandboxFunction LuaSandbox::loadString(string code, string chunkName) 

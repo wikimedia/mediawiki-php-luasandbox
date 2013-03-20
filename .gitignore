@@ -32,3 +32,4 @@ config.status
 config.sub
 *.lo
 *.la
+luasandbox_version.h

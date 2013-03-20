@@ -3,6 +3,10 @@
 #define PHP_LUASANDBOX_H
 
 #include <lua.h>
+#include <lualib.h>
+#ifdef LUA_JITLIBNAME
+#include <luajit.h>
+#endif
 #include <signal.h>
 
 #include "luasandbox_types.h"
@@ -39,6 +43,7 @@ PHP_MSHUTDOWN_FUNCTION(luasandbox);
 PHP_RSHUTDOWN_FUNCTION(luasandbox);
 PHP_MINFO_FUNCTION(luasandbox);
 
+PHP_METHOD(LuaSandbox, getVersionInfo);
 PHP_METHOD(LuaSandbox, loadString);
 PHP_METHOD(LuaSandbox, loadBinary);
 PHP_METHOD(LuaSandbox, setMemoryLimit);
