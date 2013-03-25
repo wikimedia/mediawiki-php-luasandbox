@@ -1,3 +1,9 @@
+php-luasandbox (1.6-1) precise-wikimedia; urgency=low
+
+  * Add getVersionInfo()
+
+ -- Tim Starling <tstarling@wikimedia.org>  Mon, 25 Mar 2013 15:15:21 +1100
+
 php-luasandbox (1.5-1) precise-wikimedia; urgency=low
 
   * Fix unpause bug
