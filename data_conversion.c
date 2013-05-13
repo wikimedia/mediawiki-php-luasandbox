@@ -11,15 +11,16 @@
 
 #include "php.h"
 #include "php_luasandbox.h"
+#include "zend_exceptions.h"
 
-static void luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
+static int luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
 	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC);
 static int luasandbox_free_zval_userdata(lua_State * L);
 static int luasandbox_push_hashtable(lua_State * L, HashTable * ht);
 static int luasandbox_has_error_marker(lua_State * L, int index, void * marker);
 
 extern zend_class_entry *luasandboxfunction_ce;
-extern zend_class_entry *luasandboxplaceholder_ce;
+extern zend_class_entry *luasandboxruntimeerror_ce;
 
 /**
  * An int, the address of which is used as a fatal error marker. The value is 
@@ -193,8 +194,8 @@ static int luasandbox_push_hashtable(lua_State * L, HashTable * ht)
  *
  * Convert a lua value to a zval.
  *
- * If a value is encountered that can't be converted to a zval, a LuaPlaceholder
- * object is returned instead.
+ * If a value is encountered that can't be converted to a zval, an exception is
+ * thrown.
  *
  * @param z A pointer to the destination zval
  * @param L The lua state
@@ -204,8 +205,9 @@ static int luasandbox_push_hashtable(lua_State * L, HashTable * ht)
  * @param recursionGuard A hashtable for keeping track of tables that have been 
  *     processed, to allow infinite recursion to be avoided. External callers 
  *     should set this to NULL.
+ * @return int 0 (and a PHP exception) on failure
  */
-void luasandbox_lua_to_zval(zval * z, lua_State * L, int index, 
+int luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC)
 {
 	switch (lua_type(L, index)) {
@@ -251,12 +253,29 @@ void luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 			const void * ptr = lua_topointer(L, index);
 			void * data = NULL;
 			int allocated = 0;
+			int success = 1;
 			if (recursionGuard) {
 				// Check for circular reference (infinite recursion)
 				if (zend_hash_find(recursionGuard, (char*)&ptr, sizeof(void*), &data) == SUCCESS) {
 					// Found circular reference!
-					object_init_ex(z, luasandboxplaceholder_ce);
-					break;
+					zval *zex, *ztrace;
+					MAKE_STD_ZVAL(zex);
+					object_init_ex(zex, luasandboxruntimeerror_ce);
+
+					MAKE_STD_ZVAL(ztrace);
+					luasandbox_push_structured_trace(L, 1);
+					luasandbox_lua_to_zval(ztrace, L, -1, sandbox_zval, NULL TSRMLS_CC);
+					zend_update_property(luasandboxruntimeerror_ce, zex, "luaTrace", sizeof("luaTrace")-1, ztrace TSRMLS_CC);
+					zval_ptr_dtor(&ztrace);
+					lua_pop(L, 1);
+
+					zend_update_property_string(luasandboxruntimeerror_ce, zex,
+						"message", sizeof("message")-1, "Cannot pass circular reference to PHP" TSRMLS_CC);
+					zend_update_property_long(luasandboxruntimeerror_ce, zex, "code", sizeof("code")-1, -1 TSRMLS_CC);
+					zend_throw_exception_object(zex TSRMLS_CC);
+
+					ZVAL_NULL(z); // Need to set something to prevent a segfault
+					return 0;
 				}
 			} else {
 				ALLOC_HASHTABLE(recursionGuard);
@@ -270,11 +289,15 @@ void luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 
 			// Process the array
 			array_init(z);
-			luasandbox_lua_to_array(Z_ARRVAL_P(z), L, index, sandbox_zval, recursionGuard TSRMLS_CC);
+			success = luasandbox_lua_to_array(Z_ARRVAL_P(z), L, index, sandbox_zval, recursionGuard TSRMLS_CC);
 
 			if (allocated) {
 				zend_hash_destroy(recursionGuard);
 				FREE_HASHTABLE(recursionGuard);
+			}
+
+			if (!success) {
+				return 0;
 			}
 			break;
 		}
@@ -318,10 +341,35 @@ void luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 		case LUA_TUSERDATA:
 		case LUA_TTHREAD:
 		case LUA_TLIGHTUSERDATA:
-		default:
 			// TODO: provide derived classes for each type
-			object_init_ex(z, luasandboxplaceholder_ce);
+		default: {
+			zval *zex, *ztrace;
+			char *message;
+
+			spprintf(&message, 0, "Cannot pass %s to PHP", lua_typename(L, lua_type(L, index)));
+
+			MAKE_STD_ZVAL(zex);
+			object_init_ex(zex, luasandboxruntimeerror_ce);
+
+			MAKE_STD_ZVAL(ztrace);
+			luasandbox_push_structured_trace(L, 1);
+			luasandbox_lua_to_zval(ztrace, L, -1, sandbox_zval, NULL TSRMLS_CC);
+			zend_update_property(luasandboxruntimeerror_ce, zex, "luaTrace", sizeof("luaTrace")-1, ztrace TSRMLS_CC);
+			zval_ptr_dtor(&ztrace);
+			lua_pop(L, 1);
+
+			zend_update_property_string(luasandboxruntimeerror_ce, zex,
+				"message", sizeof("message")-1, message TSRMLS_CC);
+			zend_update_property_long(luasandboxruntimeerror_ce, zex, "code", sizeof("code")-1, -1 TSRMLS_CC);
+			zend_throw_exception_object(zex TSRMLS_CC);
+
+			efree(message);
+
+			ZVAL_NULL(z); // Need to set something to prevent a segfault
+			return 0;
+		}
 	}
+	return 1;
 }
 /* }}} */
 
@@ -329,7 +377,7 @@ void luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
  *
  * Append the elements of the table in the specified index to the given HashTable.
  */
-static void luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
+static int luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
 	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC)
 {
 	const char * str;
@@ -346,8 +394,12 @@ static void luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
 	lua_pushnil(L);
 	while (lua_next(L, index) != 0) {
 		MAKE_STD_ZVAL(value);
-		luasandbox_lua_to_zval(value, L, -1, sandbox_zval, recursionGuard TSRMLS_CC);
-		
+		if (!luasandbox_lua_to_zval(value, L, -1, sandbox_zval, recursionGuard TSRMLS_CC)) {
+			// Conversion failed, fix stack and bail
+			lua_settop(L, top);
+			return 0;
+		}
+
 		if (lua_type(L, -2) == LUA_TNUMBER) {
 			n = lua_tonumber(L, -2);
 			if (n == floor(n)) {
@@ -366,6 +418,7 @@ static void luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
 		// Pop temporary values off the stack
 		lua_settop(L, top + 1);
 	}
+	return 1;
 }
 /* }}} */
 

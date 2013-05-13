@@ -72,7 +72,6 @@ zend_class_entry *luasandboxmemoryerror_ce;
 zend_class_entry *luasandboxerrorerror_ce;
 zend_class_entry *luasandboxtimeouterror_ce;
 zend_class_entry *luasandboxemergencytimeouterror_ce;
-zend_class_entry *luasandboxplaceholder_ce;
 zend_class_entry *luasandboxfunction_ce;
 
 ZEND_DECLARE_MODULE_GLOBALS(luasandbox);
@@ -276,9 +275,6 @@ PHP_MINIT_FUNCTION(luasandbox)
 	INIT_CLASS_ENTRY(ce, "LuaSandboxEmergencyTimeoutError", luasandbox_empty_methods);
 	luasandboxemergencytimeouterror_ce = zend_register_internal_class_ex(
 		&ce, luasandboxfatalerror_ce, NULL TSRMLS_CC);
-
-	INIT_CLASS_ENTRY(ce, "LuaSandboxPlaceholder", luasandbox_empty_methods);
-	luasandboxplaceholder_ce = zend_register_internal_class(&ce TSRMLS_CC);
 
 	INIT_CLASS_ENTRY(ce, "LuaSandboxFunction", luasandboxfunction_methods);
 	luasandboxfunction_ce = zend_register_internal_class(&ce TSRMLS_CC);
@@ -598,8 +594,9 @@ static void luasandbox_load_helper(int binary, INTERNAL_FUNCTION_PARAMETERS)
 	}
 
 	// Make a zval out of it, and return false on error
-	luasandbox_lua_to_zval(return_value, L, lua_gettop(L), this_ptr, NULL TSRMLS_CC);
-	if (Z_TYPE_P(return_value) == IS_NULL) {
+	if (!luasandbox_lua_to_zval(return_value, L, lua_gettop(L), this_ptr, NULL TSRMLS_CC) ||
+		Z_TYPE_P(return_value) == IS_NULL
+	) {
 		php_error_docref(NULL TSRMLS_CC, E_WARNING,
 				"too many chunks loaded already");
 		RETVAL_FALSE;
@@ -1169,8 +1166,9 @@ PHP_METHOD(LuaSandbox, wrapPhpFunction)
 	luasandbox_push_zval_userdata(L, z);
 	lua_pushcclosure(L, luasandbox_call_php, 1);
 
-	luasandbox_lua_to_zval(return_value, L, lua_gettop(L), this_ptr, NULL TSRMLS_CC);
-	if (Z_TYPE_P(return_value) == IS_NULL) {
+	if (!luasandbox_lua_to_zval(return_value, L, lua_gettop(L), this_ptr, NULL TSRMLS_CC) ||
+		Z_TYPE_P(return_value) == IS_NULL
+	) {
 		php_error_docref(NULL TSRMLS_CC, E_WARNING,
 				"too many chunks loaded already");
 		RETVAL_FALSE;
@@ -1378,7 +1376,10 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 	for (i = 0; i < numResults; i++) {
 		zval * element;
 		MAKE_STD_ZVAL(element);
-		luasandbox_lua_to_zval(element, L, retIndex + i, sandbox_zval, NULL TSRMLS_CC);
+		if (!luasandbox_lua_to_zval(element, L, retIndex + i, sandbox_zval, NULL TSRMLS_CC)) {
+			// Convert failed (which means an exception), so bail.
+			break;
+		}
 		zend_hash_next_index_insert(Z_ARRVAL_P(return_value), 
 			(void*)&element,
 			sizeof(zval*), NULL);
@@ -1585,46 +1586,55 @@ int luasandbox_call_php(lua_State * L)
 	fci.retval_ptr_ptr = &retval_ptr;
 
 	// Make an array of zval double-pointers to hold the arguments
+	int args_failed = 0;
 	temp = ecalloc(top, sizeof(void*) * 2);
 	double_pointers = (zval***)temp;
 	pointers = (zval**)(temp + top);
 	for (i = 0; i < top; i++ ) {
 		MAKE_STD_ZVAL(pointers[i]);
-		luasandbox_lua_to_zval(pointers[i], L, i + 1, intern->current_zval, NULL TSRMLS_CC);
+		if (!luasandbox_lua_to_zval(pointers[i], L, i + 1, intern->current_zval, NULL TSRMLS_CC)) {
+			// Argument conversion failed, so skip the call. The PHP exception
+			// from the conversion will be handled below.
+			args_failed = 1;
+			top = i + 1;
+			break;
+		}
 		double_pointers[i] = &(pointers[i]);
 	}
 
-	// Initialise the fci. Use zend_fcall_info_args_restore() since that's an
-	// almost-legitimate way to avoid the extra malloc that we'd get from
-	// zend_fcall_info_argp()
-	zend_fcall_info_args_restore(&fci, top, double_pointers);
+	if (!args_failed) {
+		// Initialise the fci. Use zend_fcall_info_args_restore() since that's an
+		// almost-legitimate way to avoid the extra malloc that we'd get from
+		// zend_fcall_info_argp()
+		zend_fcall_info_args_restore(&fci, top, double_pointers);
 
-	// Sanity check, timers should never be paused at this point
-	assert(!luasandbox_timer_is_paused(&intern->timer));
+		// Sanity check, timers should never be paused at this point
+		assert(!luasandbox_timer_is_paused(&intern->timer));
 
-	// Call the function
-	status = zend_call_function(&fci, &fcc TSRMLS_CC);
+		// Call the function
+		status = zend_call_function(&fci, &fcc TSRMLS_CC);
 
-	// Automatically unpause now that PHP has returned
-	luasandbox_timer_unpause(&intern->timer);
+		// Automatically unpause now that PHP has returned
+		luasandbox_timer_unpause(&intern->timer);
 
-	if (status == SUCCESS && fci.retval_ptr_ptr && *fci.retval_ptr_ptr)
-	{
-		// Push the return values back to Lua
-		if (Z_TYPE_PP(fci.retval_ptr_ptr) == IS_NULL) {
-			// No action
-		} else if (Z_TYPE_PP(fci.retval_ptr_ptr) == IS_ARRAY) {
-			bucket = Z_ARRVAL_PP(fci.retval_ptr_ptr)->pListHead;
-			while (bucket) {
-				luasandbox_push_zval(L, *((zval **)bucket->pData));
-				bucket = bucket->pListNext;
-				num_results++;
+		if (status == SUCCESS && fci.retval_ptr_ptr && *fci.retval_ptr_ptr)
+		{
+			// Push the return values back to Lua
+			if (Z_TYPE_PP(fci.retval_ptr_ptr) == IS_NULL) {
+				// No action
+			} else if (Z_TYPE_PP(fci.retval_ptr_ptr) == IS_ARRAY) {
+				bucket = Z_ARRVAL_PP(fci.retval_ptr_ptr)->pListHead;
+				while (bucket) {
+					luasandbox_push_zval(L, *((zval **)bucket->pData));
+					bucket = bucket->pListNext;
+					num_results++;
+				}
+			} else {
+				php_error_docref(NULL TSRMLS_CC, E_WARNING, 
+					"function tried to return a single value to Lua without wrapping it in an array");
 			}
-		} else {
-			php_error_docref(NULL TSRMLS_CC, E_WARNING, 
-				"function tried to return a single value to Lua without wrapping it in an array");
+			zval_ptr_dtor(&retval_ptr);
 		}
-		zval_ptr_dtor(&retval_ptr);
 	}
 
 	// Free the argument zvals

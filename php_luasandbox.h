@@ -129,7 +129,7 @@ void luasandbox_data_conversion_init(lua_State * L);
 
 int luasandbox_push_zval(lua_State * L, zval * z);
 void luasandbox_push_zval_userdata(lua_State * L, zval * z);
-void luasandbox_lua_to_zval(zval * z, lua_State * L, int index, 
+int luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC);
 void luasandbox_wrap_fatal(lua_State * L);
 int luasandbox_is_fatal(lua_State * L, int index);
