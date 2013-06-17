@@ -389,6 +389,10 @@ static int luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
 	lua_Number n;
 	int top = lua_gettop(L);
 
+	// Recursion requires an arbitrary amount of stack space so we have to
+	// check the stack.
+	luaL_checkstack(L, 15, "converting Lua table to PHP");
+
 	// Normalise the input index so that we can push without invalidating it.
 	if (index < 0) {
 		index += top + 1;

@@ -1310,6 +1310,12 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 	lua_pushvalue(L, origTop);
 
 	// Push the arguments
+	if (!lua_checkstack(L, numArgs + 10)) {
+		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+			"unable to allocate stack space for Lua call");
+		lua_settop(L, origTop - 1);
+		RETURN_FALSE;
+	}
 	for (i = 0; i < numArgs; i++) {
 		if (!luasandbox_push_zval(L, *(args[i]))) {
 			php_error_docref(NULL TSRMLS_CC, E_WARNING,
@@ -1633,6 +1639,7 @@ int luasandbox_call_php(lua_State * L)
 				// No action
 			} else if (Z_TYPE_PP(fci.retval_ptr_ptr) == IS_ARRAY) {
 				bucket = Z_ARRVAL_PP(fci.retval_ptr_ptr)->pListHead;
+				luaL_checkstack(L, Z_ARRVAL_PP(fci.retval_ptr_ptr)->nNumOfElements + 10, "converting PHP return array to Lua");
 				while (bucket) {
 					luasandbox_push_zval(L, *((zval **)bucket->pData));
 					bucket = bucket->pListNext;
