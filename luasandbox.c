@@ -1276,6 +1276,78 @@ PHP_METHOD(LuaSandboxFunction, call)
 }
 /** }}} */
 
+/** {{{ luasandbox_call_lua
+ *
+ * Much like lua_call, except it starts the appropriate timers and handles
+ * errors as a PHP exception. Returns 1 on success, 0 on failure
+ */
+int luasandbox_call_lua(php_luasandbox_obj * sandbox, zval * sandbox_zval,
+	int nargs, int nresults, int errfunc TSRMLS_DC)
+{
+	int status;
+	int timer_started = 0;
+	zval * old_zval;
+	int was_paused;
+	int old_allow_pause;
+
+	// Initialise the CPU limit timer
+	if (!sandbox->in_lua) {
+		if (luasandbox_timer_is_expired(&sandbox->timer)) {
+			zend_throw_exception(luasandboxtimeouterror_ce, luasandbox_timeout_message,
+				LUA_ERRRUN TSRMLS_CC);
+			return 0;
+		}
+		timer_started = 1;
+		if (!LUASANDBOX_G(signal_handler_installed)) {
+			luasandbox_timer_install_handler(&LUASANDBOX_G(old_handler));
+			LUASANDBOX_G(signal_handler_installed) = 1;
+		}
+		luasandbox_timer_start(&sandbox->timer);
+	}
+
+	// Save the current zval for later use in luasandbox_call_php. Restore it
+	// after execution finishes, to support re-entrancy.
+	old_zval = sandbox->current_zval;
+	sandbox->current_zval = sandbox_zval;
+
+	// Make sure this is counted against the Lua usage time limit, and set the
+	// allow_pause flag.
+	was_paused = luasandbox_timer_is_paused(&sandbox->timer);
+	luasandbox_timer_unpause(&sandbox->timer);
+	old_allow_pause = sandbox->allow_pause;
+	sandbox->allow_pause = ( !sandbox->in_lua || was_paused );
+
+	// Call the function
+	sandbox->in_lua++;
+	status = lua_pcall(sandbox->state, nargs, nresults, errfunc);
+	sandbox->in_lua--;
+	sandbox->current_zval = old_zval;
+
+	// Restore pause state
+	sandbox->allow_pause = old_allow_pause;
+	if (was_paused) {
+		luasandbox_timer_pause(&sandbox->timer);
+	}
+
+	// Stop the timer
+	if (timer_started) {
+		luasandbox_timer_stop(&sandbox->timer);
+	}
+	if (sandbox->emergency_timed_out) {
+		luasandbox_handle_emergency_timeout(sandbox TSRMLS_CC);
+		return 0;
+	}
+
+	// Handle normal errors
+	if (status) {
+		luasandbox_handle_error(sandbox, status TSRMLS_CC);
+		return 0;
+	}
+
+	return 1;
+}
+/* }}} */
+
 /** {{{ luasandbox_call_helper
  *
  * Call the function at the top of the stack and then pop it. Set return_value
@@ -1288,12 +1360,7 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 	int origTop = lua_gettop(L);
 	// Keep track of the stack index where the return values will appear
 	int retIndex = origTop + 2;
-	int status;
-	int timer_started = 0;
 	int i, numResults;
-	zval * old_zval;
-	int was_paused;
-	int old_allow_pause;
 
 	// Check to see if the value is a valid function
 	if (lua_type(L, -1) != LUA_TFUNCTION) {
@@ -1325,58 +1392,8 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 		}
 	}
 
-	// Initialise the CPU limit timer
-	if (!sandbox->in_lua) {
-		if (luasandbox_timer_is_expired(&sandbox->timer)) {
-			zend_throw_exception(luasandboxtimeouterror_ce, luasandbox_timeout_message, 
-				LUA_ERRRUN TSRMLS_CC);
-			lua_settop(L, origTop - 1);
-			RETURN_FALSE;
-		}
-		timer_started = 1;
-		if (!LUASANDBOX_G(signal_handler_installed)) {
-			luasandbox_timer_install_handler(&LUASANDBOX_G(old_handler));
-			LUASANDBOX_G(signal_handler_installed) = 1;
-		}
-		luasandbox_timer_start(&sandbox->timer);
-	}
-
-	// Save the current zval for later use in luasandbox_call_php. Restore it 
-	// after execution finishes, to support re-entrancy.
-	old_zval = sandbox->current_zval;
-	sandbox->current_zval = sandbox_zval;
-
-	// Make sure this is counted against the Lua usage time limit, and set the
-	// allow_pause flag.
-	was_paused = luasandbox_timer_is_paused(&sandbox->timer);
-	luasandbox_timer_unpause(&sandbox->timer);
-	old_allow_pause = sandbox->allow_pause;
-	sandbox->allow_pause = ( !sandbox->in_lua || was_paused );
-
 	// Call the function
-	sandbox->in_lua++;
-	status = lua_pcall(L, numArgs, LUA_MULTRET, origTop + 1);
-	sandbox->in_lua--;
-	sandbox->current_zval = old_zval;
-
-	// Restore pause state
-	sandbox->allow_pause = old_allow_pause;
-	if (was_paused) {
-		luasandbox_timer_pause(&sandbox->timer);
-	}
-
-	// Stop the timer
-	if (timer_started) {
-		luasandbox_timer_stop(&sandbox->timer);
-	}
-	if (sandbox->emergency_timed_out) {
-		luasandbox_handle_emergency_timeout(sandbox TSRMLS_CC);
-		RETURN_FALSE;
-	}
-
-	// Handle normal errors
-	if (status) {
-		luasandbox_handle_error(sandbox, status TSRMLS_CC);
+	if (!luasandbox_call_lua(sandbox, sandbox_zval, numArgs, LUA_MULTRET, origTop + 1 TSRMLS_CC)) {
 		lua_settop(L, origTop - 1);
 		RETURN_FALSE;
 	}

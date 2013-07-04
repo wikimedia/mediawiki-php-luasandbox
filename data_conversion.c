@@ -25,6 +25,8 @@ static inline void luasandbox_unprotect_recursion(HashTable * ht);
 
 static int luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
 	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC);
+static int luasandbox_lua_pair_to_array(HashTable *ht, lua_State *L,
+	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC);
 static int luasandbox_free_zval_userdata(lua_State * L);
 static int luasandbox_push_hashtable(lua_State * L, HashTable * ht);
 static int luasandbox_has_error_marker(lua_State * L, int index, void * marker);
@@ -402,10 +404,7 @@ int luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 static int luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
 	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC)
 {
-	const char * str;
-	size_t length;
-	zval *value;
-	lua_Number n;
+	php_luasandbox_obj * sandbox;
 	int top = lua_gettop(L);
 
 	// Recursion requires an arbitrary amount of stack space so we have to
@@ -417,63 +416,127 @@ static int luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
 		index += top + 1;
 	}
 
-	lua_pushnil(L);
-	while (lua_next(L, index) != 0) {
-		ALLOC_INIT_ZVAL(value); // ensure is inited even if lua_to_zval bails.
-		if (!luasandbox_lua_to_zval(value, L, -1, sandbox_zval, recursionGuard TSRMLS_CC)) {
-			// Conversion failed, fix stack and bail
-			zval_ptr_dtor(&value);
+	// If the input table has a __pairs function, we need to use that instead
+	// of lua_next.
+	if (luaL_getmetafield(L, index, "__pairs")) {
+		sandbox = luasandbox_get_php_obj(L);
+
+		// Put the error handler function onto the stack
+		lua_pushcfunction(L, luasandbox_attach_trace);
+		lua_insert(L, top + 1);
+
+		// Call __pairs
+		lua_pushvalue(L, index);
+		if (!luasandbox_call_lua(sandbox, sandbox_zval, 1, 3, top + 1 TSRMLS_CC)) {
+			// Failed to call __pairs. Cleanup stack and return failure.
 			lua_settop(L, top);
 			return 0;
 		}
+		while (1) {
+			// We need to copy static-data and func so we can reuse them for
+			// each iteration.
+			lua_pushvalue(L, -3);
+			lua_insert(L, -2);
+			lua_pushvalue(L, -3);
+			lua_insert(L, -2);
 
-		if (lua_type(L, -2) == LUA_TNUMBER) {
-			n = lua_tonumber(L, -2);
-			if (isfinite(n) && n == floor(n)) {
-				// Integer key
-				zend_hash_index_update(ht, n, (void*)&value, sizeof(zval*), NULL);
-				lua_settop(L, top + 1);
-				continue;
+			// Call the custom 'next' function from __pairs
+			if (!luasandbox_call_lua(sandbox, sandbox_zval, 2, 2, top + 1 TSRMLS_CC)) {
+				// Failed. Cleanup stack and return failure.
+				lua_settop(L, top);
+				return 0;
+			}
+
+			if (lua_isnil(L, -2)) {
+				// Nil key == end. Cleanup stack and exit loop.
+				lua_settop(L, top);
+				break;
+			}
+			if (!luasandbox_lua_pair_to_array(ht, L, sandbox_zval, recursionGuard TSRMLS_CC)) {
+				// Failed to convert value. Cleanup stack and return failure.
+				lua_settop(L, top);
+				return 0;
 			}
 		}
-
-		// Make a copy of the key so that we can call lua_tolstring() which is destructive
-		lua_pushvalue(L, -2);
-		str = lua_tolstring(L, -1, &length);
-		if ( str == NULL ) {
-			// Only strings and integers may be used as keys
-			zval *zex, *ztrace;
-			char *message;
-
-			spprintf(&message, 0, "Cannot use %s as an array key when passing data from Lua to PHP",
-				lua_typename(L, lua_type(L, -3))
-			);
-
-			MAKE_STD_ZVAL(zex);
-			object_init_ex(zex, luasandboxruntimeerror_ce);
-
-			MAKE_STD_ZVAL(ztrace);
-			luasandbox_push_structured_trace(L, 1);
-			luasandbox_lua_to_zval(ztrace, L, -1, sandbox_zval, NULL TSRMLS_CC);
-			zend_update_property(luasandboxruntimeerror_ce, zex, "luaTrace", sizeof("luaTrace")-1, ztrace TSRMLS_CC);
-			zval_ptr_dtor(&ztrace);
-			lua_pop(L, 1);
-
-			zend_update_property_string(luasandboxruntimeerror_ce, zex,
-				"message", sizeof("message")-1, message TSRMLS_CC);
-			zend_update_property_long(luasandboxruntimeerror_ce, zex, "code", sizeof("code")-1, -1 TSRMLS_CC);
-			zend_throw_exception_object(zex TSRMLS_CC);
-
-			efree(message);
-
-			lua_settop(L, top);
-			return 0;
+	} else {
+		// No __pairs, we can use lua_next
+		lua_pushnil(L);
+		while (lua_next(L, index) != 0) {
+			if (!luasandbox_lua_pair_to_array(ht, L, sandbox_zval, recursionGuard TSRMLS_CC)) {
+				// Failed to convert value. Cleanup stack and return failure.
+				lua_settop(L, top);
+				return 0;
+			}
 		}
-		zend_hash_update(ht, str, length + 1, (void*)&value, sizeof(zval*), NULL);
-
-		// Pop temporary values off the stack
-		lua_settop(L, top + 1);
 	}
+	return 1;
+}
+/* }}} */
+
+/** {{{ luasandbox_lua_pair_to_array
+ *
+ * Take the lua key-value pair at the top of the Lua stack and add it to the given HashTable.
+ * On success the value is popped, but the key remains on the stack.
+ */
+static int luasandbox_lua_pair_to_array(HashTable *ht, lua_State *L,
+	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC)
+{
+	const char * str;
+	size_t length;
+	zval *value;
+	lua_Number n;
+
+	// Convert value, then remove it
+	ALLOC_INIT_ZVAL(value);
+	if (!luasandbox_lua_to_zval(value, L, -1, sandbox_zval, recursionGuard TSRMLS_CC)) {
+		zval_ptr_dtor(&value);
+		return 0;
+	}
+	lua_pop(L, 1);
+
+	// Convert key, but leave it there
+	if (lua_type(L, -1) == LUA_TNUMBER) {
+		n = lua_tonumber(L, -1);
+		if (isfinite(n) && n == floor(n)) {
+			// Integer key
+			zend_hash_index_update(ht, n, (void*)&value, sizeof(zval*), NULL);
+			return 1;
+		}
+	}
+
+	// Make a copy of the key so that we can call lua_tolstring() which is destructive
+	lua_pushvalue(L, -1);
+	str = lua_tolstring(L, -1, &length);
+	if ( str == NULL ) {
+		// Only strings and integers may be used as keys
+		zval *zex, *ztrace;
+		char *message;
+
+		spprintf(&message, 0, "Cannot use %s as an array key when passing data from Lua to PHP",
+			lua_typename(L, lua_type(L, -2))
+		);
+
+		MAKE_STD_ZVAL(zex);
+		object_init_ex(zex, luasandboxruntimeerror_ce);
+
+		ALLOC_INIT_ZVAL(ztrace);
+		luasandbox_push_structured_trace(L, 1);
+		luasandbox_lua_to_zval(ztrace, L, -1, sandbox_zval, NULL TSRMLS_CC);
+		zend_update_property(luasandboxruntimeerror_ce, zex, "luaTrace", sizeof("luaTrace")-1, ztrace TSRMLS_CC);
+		zval_ptr_dtor(&ztrace);
+		lua_pop(L, 1);
+
+		zend_update_property_string(luasandboxruntimeerror_ce, zex,
+			"message", sizeof("message")-1, message TSRMLS_CC);
+		zend_update_property_long(luasandboxruntimeerror_ce, zex, "code", sizeof("code")-1, -1 TSRMLS_CC);
+		zend_throw_exception_object(zex TSRMLS_CC);
+
+		efree(message);
+
+		return 0;
+	}
+	zend_hash_update(ht, str, length + 1, (void*)&value, sizeof(zval*), NULL);
+	lua_pop(L, 1);
 	return 1;
 }
 /* }}} */

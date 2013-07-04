@@ -37,6 +37,8 @@ extern zend_module_entry luasandbox_module_entry;
 #endif
 
 int luasandbox_call_php(lua_State * L);
+int luasandbox_call_lua(php_luasandbox_obj * sandbox, zval * sandbox_zval,
+	int nargs, int nresults, int errfunc TSRMLS_DC);
 
 PHP_MINIT_FUNCTION(luasandbox);
 PHP_MSHUTDOWN_FUNCTION(luasandbox);
