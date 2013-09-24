@@ -81,6 +81,51 @@ while ( is_array( $v ) ) {
 }
 echo "$ct levels ok\n";
 
+echo "Proper handling of invalid keys in Lua→PHP conversion (table): ";
+$sandbox = new LuaSandbox;
+try {
+	$ret = $sandbox->loadString( 'return { [{}] = 1 }' )->call();
+	echo var_export( $ret[0], 1 ) . "\n";
+} catch ( Exception $ex ) {
+	echo "Exception: " . $ex->getMessage() . "\n";
+}
+
+echo "Proper handling of invalid keys in Lua→PHP conversion (bool): ";
+$sandbox = new LuaSandbox;
+try {
+	$ret = $sandbox->loadString( 'return { [true] = 1 }' )->call();
+	echo var_export( $ret[0], 1 ) . "\n";
+} catch ( Exception $ex ) {
+	echo "Exception: " . $ex->getMessage() . "\n";
+}
+
+echo "Proper handling of invalid keys in Lua→PHP conversion (function): ";
+$sandbox = new LuaSandbox;
+try {
+	$ret = $sandbox->loadString( 'return { [tostring] = 1 }' )->call();
+	echo var_export( $ret[0], 1 ) . "\n";
+} catch ( Exception $ex ) {
+	echo "Exception: " . $ex->getMessage() . "\n";
+}
+
+echo "Proper handling of unusual keys in Lua→PHP conversion (float): ";
+$sandbox = new LuaSandbox;
+try {
+	$ret = $sandbox->loadString( 'return { [1.5] = 1 }' )->call();
+	echo var_export( $ret[0], 1 ) . "\n";
+} catch ( Exception $ex ) {
+	echo "Exception: " . $ex->getMessage() . "\n";
+}
+
+echo "Proper handling of unusual keys in Lua→PHP conversion (inf): ";
+$sandbox = new LuaSandbox;
+try {
+	$ret = $sandbox->loadString( 'return { [math.huge] = 1 }' )->call();
+	echo var_export( $ret[0], 1 ) . "\n";
+} catch ( Exception $ex ) {
+	echo "Exception: " . $ex->getMessage() . "\n";
+}
+
 --EXPECT--
 array(1) {
   [0]=>
@@ -94,3 +139,12 @@ Returning lots of values PHP->Lua doesn't cause a crash: 500 values ok
 Returning lots of values Lua->PHP doesn't cause a crash: 500 values ok
 Passing deeply-nested arrays PHP->Lua doesn't cause a crash: 500 levels ok
 Passing deeply-nested tables Lua->PHP doesn't cause a crash: 500 levels ok
+Proper handling of invalid keys in Lua→PHP conversion (table): Exception: Cannot use table as an array key when passing data from Lua to PHP
+Proper handling of invalid keys in Lua→PHP conversion (bool): Exception: Cannot use boolean as an array key when passing data from Lua to PHP
+Proper handling of invalid keys in Lua→PHP conversion (function): Exception: Cannot use function as an array key when passing data from Lua to PHP
+Proper handling of unusual keys in Lua→PHP conversion (float): array (
+  '1.5' => 1,
+)
+Proper handling of unusual keys in Lua→PHP conversion (inf): array (
+  'inf' => 1,
+)

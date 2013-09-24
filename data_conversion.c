@@ -410,7 +410,7 @@ static int luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
 
 		if (lua_type(L, -2) == LUA_TNUMBER) {
 			n = lua_tonumber(L, -2);
-			if (n == floor(n)) {
+			if (isfinite(n) && n == floor(n)) {
 				// Integer key
 				zend_hash_index_update(ht, n, (void*)&value, sizeof(zval*), NULL);
 				lua_settop(L, top + 1);
@@ -421,6 +421,35 @@ static int luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
 		// Make a copy of the key so that we can call lua_tolstring() which is destructive
 		lua_pushvalue(L, -2);
 		str = lua_tolstring(L, -1, &length);
+		if ( str == NULL ) {
+			// Only strings and integers may be used as keys
+			zval *zex, *ztrace;
+			char *message;
+
+			spprintf(&message, 0, "Cannot use %s as an array key when passing data from Lua to PHP",
+				lua_typename(L, lua_type(L, -3))
+			);
+
+			MAKE_STD_ZVAL(zex);
+			object_init_ex(zex, luasandboxruntimeerror_ce);
+
+			MAKE_STD_ZVAL(ztrace);
+			luasandbox_push_structured_trace(L, 1);
+			luasandbox_lua_to_zval(ztrace, L, -1, sandbox_zval, NULL TSRMLS_CC);
+			zend_update_property(luasandboxruntimeerror_ce, zex, "luaTrace", sizeof("luaTrace")-1, ztrace TSRMLS_CC);
+			zval_ptr_dtor(&ztrace);
+			lua_pop(L, 1);
+
+			zend_update_property_string(luasandboxruntimeerror_ce, zex,
+				"message", sizeof("message")-1, message TSRMLS_CC);
+			zend_update_property_long(luasandboxruntimeerror_ce, zex, "code", sizeof("code")-1, -1 TSRMLS_CC);
+			zend_throw_exception_object(zex TSRMLS_CC);
+
+			efree(message);
+
+			lua_settop(L, top);
+			return 0;
+		}
 		zend_hash_update(ht, str, length + 1, (void*)&value, sizeof(zval*), NULL);
 
 		// Pop temporary values off the stack
