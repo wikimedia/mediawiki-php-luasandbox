@@ -1,5 +1,5 @@
 <?php
-$br = (php_sapi_name() == "cli")? "":"<br>";
+$br = (PHP_SAPI == "cli")? "":"<br>";
 
 if(!extension_loaded('luasandbox')) {
 	dl('luasandbox.' . PHP_SHLIB_SUFFIX);
