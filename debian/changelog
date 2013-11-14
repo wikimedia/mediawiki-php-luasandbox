@@ -1,3 +1,16 @@
+php-luasandbox (1.8-1) precise-wikimedia; urgency=high
+
+  * Fix one more buffer overflow.
+  * Fix NULL pointer dereference.
+
+ -- Brad Jorsch <bjorsch@wikimedia.org>  Tue, 03 Sep 2013 15:42:45 -0400
+
+php-luasandbox (1.7-1) precise-wikimedia; urgency=high
+
+  * Fix buffer overflow in argument and return value processing.
+
+ -- Brad Jorsch <bjorsch@wikimedia.org>  Mon, 17 Jun 2013 13:29:43 -0400
+
 php-luasandbox (1.6-1) precise-wikimedia; urgency=low
 
   * Add getVersionInfo()
