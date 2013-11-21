@@ -347,6 +347,9 @@ static zend_object_value luasandbox_new(zend_class_entry *ce TSRMLS_DC)
 	sandbox = emalloc(sizeof(php_luasandbox_obj));
 	memset(sandbox, 0, sizeof(php_luasandbox_obj));
 	zend_object_std_init(&sandbox->std, ce TSRMLS_CC);
+#if PHP_VERSION_ID > 50399
+	object_properties_init(&sandbox->std, ce);
+#endif
 	sandbox->alloc.memory_limit = (size_t)-1;
 	sandbox->allow_pause = 1;
 
@@ -432,6 +435,9 @@ static zend_object_value luasandboxfunction_new(zend_class_entry *ce TSRMLS_DC)
 	intern = emalloc(sizeof(php_luasandboxfunction_obj));
 	memset(intern, 0, sizeof(php_luasandboxfunction_obj));
 	zend_object_std_init(&intern->std, ce TSRMLS_CC);
+#if PHP_VERSION_ID > 50399
+	object_properties_init(&intern->std, ce);
+#endif
 
 	// Put the object into the store
 	retval.handle = zend_objects_store_put(
