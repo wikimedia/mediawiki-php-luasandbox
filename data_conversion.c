@@ -262,7 +262,7 @@ int luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 					MAKE_STD_ZVAL(zex);
 					object_init_ex(zex, luasandboxruntimeerror_ce);
 
-					MAKE_STD_ZVAL(ztrace);
+					ALLOC_INIT_ZVAL(ztrace); // IS_NULL if lua_to_zval fails.
 					luasandbox_push_structured_trace(L, 1);
 					luasandbox_lua_to_zval(ztrace, L, -1, sandbox_zval, NULL TSRMLS_CC);
 					zend_update_property(luasandboxruntimeerror_ce, zex, "luaTrace", sizeof("luaTrace")-1, ztrace TSRMLS_CC);
@@ -297,6 +297,9 @@ int luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 			}
 
 			if (!success) {
+				// free the array created by array_init() above.
+				zval_dtor(z);
+				ZVAL_NULL(z);
 				return 0;
 			}
 			break;
@@ -351,7 +354,7 @@ int luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 			MAKE_STD_ZVAL(zex);
 			object_init_ex(zex, luasandboxruntimeerror_ce);
 
-			MAKE_STD_ZVAL(ztrace);
+			ALLOC_INIT_ZVAL(ztrace); // IS_NULL if lua_to_zval fails.
 			luasandbox_push_structured_trace(L, 1);
 			luasandbox_lua_to_zval(ztrace, L, -1, sandbox_zval, NULL TSRMLS_CC);
 			zend_update_property(luasandboxruntimeerror_ce, zex, "luaTrace", sizeof("luaTrace")-1, ztrace TSRMLS_CC);
@@ -393,9 +396,10 @@ static int luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
 
 	lua_pushnil(L);
 	while (lua_next(L, index) != 0) {
-		MAKE_STD_ZVAL(value);
+		ALLOC_INIT_ZVAL(value); // ensure is inited even if lua_to_zval bails.
 		if (!luasandbox_lua_to_zval(value, L, -1, sandbox_zval, recursionGuard TSRMLS_CC)) {
 			// Conversion failed, fix stack and bail
+			zval_ptr_dtor(&value);
 			lua_settop(L, top);
 			return 0;
 		}
