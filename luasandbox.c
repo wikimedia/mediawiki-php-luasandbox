@@ -591,7 +591,7 @@ static void luasandbox_load_helper(int binary, INTERNAL_FUNCTION_PARAMETERS)
 	// Handle any error from luaL_loadbuffer
 	if (status != 0) {
 		luasandbox_handle_error(sandbox, status TSRMLS_CC);
-		return;
+		RETURN_FALSE;
 	}
 
 	// Make a zval out of it, and return false on error
@@ -1359,7 +1359,7 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 	}
 	if (sandbox->emergency_timed_out) {
 		luasandbox_handle_emergency_timeout(sandbox TSRMLS_CC);
-		return;
+		RETURN_FALSE;
 	}
 
 	// Handle normal errors
