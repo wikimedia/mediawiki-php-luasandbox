@@ -315,6 +315,7 @@ PHP_RSHUTDOWN_FUNCTION(luasandbox)
 
 static int luasandbox_post_deactivate() /* {{{ */
 {
+	TSRMLS_FETCH();
 	if (LUASANDBOX_G(signal_handler_installed)) {
 		luasandbox_timer_remove_handler(&LUASANDBOX_G(old_handler));
 		LUASANDBOX_G(signal_handler_installed) = 0;
