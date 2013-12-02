@@ -723,7 +723,7 @@ static void luasandbox_handle_error(php_luasandbox_obj * sandbox, int status TSR
 		// Push the trace on to the top of the stack
 		lua_rawgeti(L, -1, 3);
 		// Convert it to a zval
-		MAKE_STD_ZVAL(ztrace);
+		ALLOC_INIT_ZVAL(ztrace); // IS_NULL if lua_to_zval fails.
 		luasandbox_lua_to_zval(ztrace, L, -1, sandbox->current_zval, NULL TSRMLS_CC);
 		// Put it in the exception object
 		zend_update_property(ce, zex, "luaTrace", sizeof("luaTrace")-1, ztrace TSRMLS_CC);
@@ -1382,9 +1382,10 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 	// Fill the array with the results
 	for (i = 0; i < numResults; i++) {
 		zval * element;
-		MAKE_STD_ZVAL(element);
+		ALLOC_INIT_ZVAL(element); // ensure elem is inited in case we bail
 		if (!luasandbox_lua_to_zval(element, L, retIndex + i, sandbox_zval, NULL TSRMLS_CC)) {
 			// Convert failed (which means an exception), so bail.
+			zval_ptr_dtor(&element);
 			break;
 		}
 		zend_hash_next_index_insert(Z_ARRVAL_P(return_value), 
@@ -1598,10 +1599,11 @@ int luasandbox_call_php(lua_State * L)
 	double_pointers = (zval***)temp;
 	pointers = (zval**)(temp + top);
 	for (i = 0; i < top; i++ ) {
-		MAKE_STD_ZVAL(pointers[i]);
+		ALLOC_INIT_ZVAL(pointers[i]); // ensure is inited in case we fail
 		if (!luasandbox_lua_to_zval(pointers[i], L, i + 1, intern->current_zval, NULL TSRMLS_CC)) {
 			// Argument conversion failed, so skip the call. The PHP exception
-			// from the conversion will be handled below.
+			// from the conversion will be handled below, along with freeing
+			// all the zvals in pointers[0 <= i < top].
 			args_failed = 1;
 			top = i + 1;
 			break;
