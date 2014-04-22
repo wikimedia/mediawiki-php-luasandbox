@@ -1,3 +1,9 @@
+php-luasandbox (1.9-1) precise-wikimedia; urgency=low
+
+  * Allow memory over-allocation in unprotected Lua calls, fixes bug #59130
+
+ -- Alexandros Kosiaris <akosiaris@wikimedia.org>  Tue, 22 Apr 2014 09:52:15 +0000
+
 php-luasandbox (1.8-1) precise-wikimedia; urgency=high
 
   * Fix one more buffer overflow.
