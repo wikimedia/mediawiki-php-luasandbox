@@ -1,0 +1,23 @@
+diff --git a/hphp/runtime/ext_zend_compat/CMakeLists.txt b/hphp/runtime/ext_zend_compat/CMakeLists.txt
+index 08bf6d6..70afb17 100644
+--- a/hphp/runtime/ext_zend_compat/CMakeLists.txt
++++ b/hphp/runtime/ext_zend_compat/CMakeLists.txt
+@@ -1,4 +1,5 @@
+ INCLUDE(CMakeDependentOption)
++INCLUDE(FindLua51)
+ CMAKE_DEPENDENT_OPTION(ENABLE_MONGO
+   "Enable Mongo extension (requires ENABLE_ZEND_COMPAT)" OFF
+   "ENABLE_ZEND_COMPAT" OFF)
+@@ -48,6 +49,12 @@ if (ENABLE_ZEND_COMPAT)
+       if (ENABLE_EZC_TEST)
+         HHVM_SELECT_SOURCES("${EZC_DIR}/ezc_test")
+       endif()
++    elseif (${ezc_project} STREQUAL "luasandbox")
++      if (LUA51_FOUND)
++        include_directories(${LUA_INCLUDE_DIR})
++        list(APPEND ZEND_COMPAT_LINK_LIBRARIES ${LUA_LIBRARIES})
++        HHVM_SELECT_SOURCES("${EZC_DIR}/luasandbox")
++      endif()
+     else()
+       HHVM_SELECT_SOURCES("${EZC_DIR}/${ezc_project}")
+     endif()

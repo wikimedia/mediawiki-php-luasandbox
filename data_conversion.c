@@ -13,6 +13,16 @@
 #include "php_luasandbox.h"
 #include "zend_exceptions.h"
 
+#ifdef HHVM
+#include <set>
+static HPHP::ThreadLocal<std::set<HashTable*>> protectionSet;
+using std::isfinite;
+#endif
+
+static inline int luasandbox_is_recursive(HashTable * ht);
+static inline void luasandbox_protect_recursion(HashTable * ht);
+static inline void luasandbox_unprotect_recursion(HashTable * ht);
+
 static int luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
 	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC);
 static int luasandbox_free_zval_userdata(lua_State * L);
@@ -97,8 +107,6 @@ int luasandbox_push_zval(lua_State * L, zval * z)
 			lua_pushlstring(L, Z_STRVAL_P(z), Z_STRLEN_P(z));
 			break;
 		case IS_RESOURCE:
-		case IS_CONSTANT:
-		case IS_CONSTANT_ARRAY:
 		default:
 			return 0;
 	}
@@ -152,40 +160,51 @@ void luasandbox_push_zval_userdata(lua_State * L, zval * z)
  */
 static int luasandbox_push_hashtable(lua_State * L, HashTable * ht)
 {
-	Bucket * p;
+	HashPosition p;
 
 	// Recursion requires an arbitrary amount of stack space so we have to 
 	// check the stack.
 	luaL_checkstack(L, 10, "converting PHP array to Lua");
 
 	lua_newtable(L);
-	if (!ht || !ht->nNumOfElements) {
+	if (!ht || !zend_hash_num_elements(ht)) {
 		return 1;
 	}
-	if (ht->nApplyCount) {
+
+	if (luasandbox_is_recursive(ht)) {
 		TSRMLS_FETCH();
 		php_error_docref(NULL TSRMLS_CC, E_WARNING, "recursion detected");
 		return 0;
 	}
-	ht->nApplyCount++;
-	for (p = ht->pListHead; p; p = p->pListNext) {
-		if (p->nKeyLength) {
-			lua_pushlstring(L, p->arKey, p->nKeyLength - 1);
+	luasandbox_protect_recursion(ht);
+	for (zend_hash_internal_pointer_reset_ex(ht, &p);
+			zend_hash_get_current_key_type_ex(ht, &p) != HASH_KEY_NON_EXISTANT;
+			zend_hash_move_forward_ex(ht, &p))
+	{
+		char * key = "";
+		uint key_length = 0;
+		ulong lkey = 0;
+		zval ** value;
+		int key_type = zend_hash_get_current_key_ex(ht, &key, &key_length,
+				&lkey, 0, &p);
+		zend_hash_get_current_data_ex(ht, (void**)&value, &p);
+		if (key_type == HASH_KEY_IS_STRING) {
+			lua_pushlstring(L, key, key_length - 1);
 		} else {
-			lua_pushinteger(L, p->h);
+			lua_pushinteger(L, lkey);
 		}
-		
-		if (!luasandbox_push_zval(L, *(zval**)p->pData)) {
+
+		if (!luasandbox_push_zval(L, *value)) {
 			// Failed to process that data value
 			// Pop the key and the half-constructed table
 			lua_pop(L, 2);
-			ht->nApplyCount--;
+			luasandbox_unprotect_recursion(ht);
 			return 0;
 		}
 
 		lua_settable(L, -3);
 	}
-	ht->nApplyCount--;
+	luasandbox_unprotect_recursion(ht);
 	return 1;
 }
 /* }}} */
@@ -285,7 +304,7 @@ int luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 
 			// Add the current table to the recursion guard hashtable
 			// Use the pointer as the key, zero-length data
-			zend_hash_update(recursionGuard, (char*)&ptr, sizeof(void*), "", 1, NULL);
+			zend_hash_update(recursionGuard, (char*)&ptr, sizeof(void*), (void*)"", 1, NULL);
 
 			// Process the array
 			array_init(z);
@@ -606,4 +625,44 @@ void luasandbox_push_structured_trace(lua_State * L, int level)
 	}
 }
 /* }}} */
+
+/** {{{ luasandbox_is_recursive
+ * Check if the recursion flag is set on this hashtable.
+ *
+ * Under Zend, this is implemented using nApplyCount, following the example
+ * of HASH_PROTECT_RECURSION() in zend_hash.c. Under HHVM, this is implemented
+ * with a std::set of pointer values, since the HashTable object itself has
+ * no space for storing a recursion level.
+ */
+static inline int luasandbox_is_recursive(HashTable * ht) {
+#ifdef HHVM
+	return (int)(protectionSet.get()->count(ht));
+#else
+	return ht->nApplyCount;
+#endif
+}
+
+/** {{{ luasandbox_protect_recursion
+ *
+ * Increment the recursion level
+ */
+static inline void luasandbox_protect_recursion(HashTable * ht) {
+#ifdef HHVM
+	protectionSet.get()->insert(ht);
+#else
+	ht->nApplyCount++;
+#endif
+}
+
+/** {{{ luasandbox_protect_recursion
+ *
+ * Decrement the recursion level
+ */
+static inline void luasandbox_unprotect_recursion(HashTable * ht) {
+#ifdef HHVM
+	protectionSet.get()->erase(ht);
+#else
+	ht->nApplyCount--;
+#endif
+}
 

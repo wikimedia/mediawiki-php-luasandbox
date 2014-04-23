@@ -294,7 +294,6 @@ static PHP_GINIT_FUNCTION(luasandbox)
 /** {{{ luasandbox_destroy_globals */
 static PHP_GSHUTDOWN_FUNCTION(luasandbox)
 {
-	luasandbox_lib_destroy_globals(luasandbox_globals TSRMLS_CC);
 }
 /* }}} */
 
@@ -320,6 +319,7 @@ static int luasandbox_post_deactivate() /* {{{ */
 		luasandbox_timer_remove_handler(&LUASANDBOX_G(old_handler));
 		LUASANDBOX_G(signal_handler_installed) = 0;
 	}
+	luasandbox_lib_destroy_globals(TSRMLS_C);
 	return SUCCESS;
 }
 /* }}} */
@@ -344,7 +344,7 @@ static zend_object_value luasandbox_new(zend_class_entry *ce TSRMLS_DC)
 	zend_object_value retval;
 
 	// Create the internal object
-	sandbox = emalloc(sizeof(php_luasandbox_obj));
+	sandbox = (php_luasandbox_obj*)emalloc(sizeof(php_luasandbox_obj));
 	memset(sandbox, 0, sizeof(php_luasandbox_obj));
 	zend_object_std_init(&sandbox->std, ce TSRMLS_CC);
 #if PHP_VERSION_ID > 50399
@@ -432,7 +432,7 @@ static zend_object_value luasandboxfunction_new(zend_class_entry *ce TSRMLS_DC)
 	zend_object_value retval;
 	
 	// Create the internal object
-	intern = emalloc(sizeof(php_luasandboxfunction_obj));
+	intern = (php_luasandboxfunction_obj*)emalloc(sizeof(php_luasandboxfunction_obj));
 	memset(intern, 0, sizeof(php_luasandboxfunction_obj));
 	zend_object_std_init(&intern->std, ce TSRMLS_CC);
 #if PHP_VERSION_ID > 50399
@@ -790,7 +790,7 @@ PHP_METHOD(LuaSandbox, setMemoryLimit)
  */
 PHP_METHOD(LuaSandbox, setCPULimit)
 {
-	zval **zpp_normal = NULL, **zpp_emergency = NULL;
+	zval *zp_normal = NULL, *zp_emergency = NULL;
 
 	php_luasandbox_obj * sandbox = (php_luasandbox_obj*) 
 		zend_object_store_get_object(getThis() TSRMLS_CC);
@@ -798,42 +798,30 @@ PHP_METHOD(LuaSandbox, setCPULimit)
 	struct timespec normal = {0, 0};
 	struct timespec emergency = {0, 0};
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "Z|Z",
-		&zpp_normal, &zpp_emergency) == FAILURE)
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z|z",
+		&zp_normal, &zp_emergency) == FAILURE)
 	{
 		RETURN_FALSE;
 	}
 
-	if (!zpp_normal
-		|| (Z_TYPE_PP(zpp_normal) == IS_BOOL && Z_BVAL_PP(zpp_normal) == 0))
+	if (!zp_normal
+		|| (Z_TYPE_P(zp_normal) == IS_BOOL && Z_BVAL_P(zp_normal) == 0))
 	{
 		// No limit
 		sandbox->is_cpu_limited = 0;
 	} else {
-		convert_scalar_to_number_ex(zpp_normal);
-		if (Z_TYPE_PP(zpp_normal) == IS_LONG) {
-			convert_to_double_ex(zpp_normal);
-		}
-		if (Z_TYPE_PP(zpp_normal) == IS_DOUBLE) {
-			luasandbox_set_timespec(&normal, Z_DVAL_PP(zpp_normal));
-			sandbox->is_cpu_limited = 1;
-		} else {
-			sandbox->is_cpu_limited = 0;
-		}
+		convert_to_double_ex(&zp_normal);
+		luasandbox_set_timespec(&normal, Z_DVAL_P(zp_normal));
+		sandbox->is_cpu_limited = 1;
 	}
 
-	if (!zpp_emergency
-		|| (Z_TYPE_PP(zpp_emergency) == IS_BOOL && Z_BVAL_PP(zpp_emergency) == 0))
+	if (!zp_emergency
+		|| (Z_TYPE_P(zp_emergency) == IS_BOOL && Z_BVAL_P(zp_emergency) == 0))
 	{
 		// No emergency limit
 	} else {
-		convert_scalar_to_number_ex(zpp_emergency);
-		if (Z_TYPE_PP(zpp_emergency) == IS_LONG) {
-			convert_to_double_ex(zpp_emergency);
-		}
-		if (Z_TYPE_PP(zpp_normal) == IS_DOUBLE) {
-			luasandbox_set_timespec(&emergency, Z_DVAL_PP(zpp_emergency));
-		}
+		convert_to_double_ex(&zp_emergency);
+		luasandbox_set_timespec(&emergency, Z_DVAL_P(zp_emergency));
 	}
 
 	// Set the timer
@@ -1011,7 +999,7 @@ static int luasandbox_sort_profile(const void *a, const void *b TSRMLS_DC) /* {{
 PHP_METHOD(LuaSandbox, getProfilerFunctionReport)
 {
 	long units = LUASANDBOX_SECONDS;
-	Bucket * p;
+	HashPosition p;
 	php_luasandbox_obj * sandbox = (php_luasandbox_obj*)
 		zend_object_store_get_object(getThis() TSRMLS_CC);
 	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "|l", &units) == FAILURE) {
@@ -1036,7 +1024,7 @@ PHP_METHOD(LuaSandbox, getProfilerFunctionReport)
 	// Sort the input array in descending order of time usage
 	zend_hash_sort(counts, zend_qsort, luasandbox_sort_profile, 0 TSRMLS_CC);
 
-	array_init_size(return_value, counts->nNumOfElements);	
+	array_init_size(return_value, zend_hash_num_elements(counts));
 
 	// Copy the data to the output array, scaling as necessary
 	double scale = 0.;
@@ -1049,12 +1037,22 @@ PHP_METHOD(LuaSandbox, getProfilerFunctionReport)
 		}
 	}
 
-	for (p = counts->pListHead; p; p = p->pListNext) {
-		size_t count = *(size_t*)p->pData;
+	for (zend_hash_internal_pointer_reset_ex(counts, &p);
+			zend_hash_get_current_key_type_ex(counts, &p) != HASH_KEY_NON_EXISTANT;
+			zend_hash_move_forward_ex(counts, &p))
+	{
+		size_t count;
+		char * func_name = "";
+		uint func_name_length = 0;
+		ulong lkey;
+
+		zend_hash_get_current_key_ex(counts, &func_name, &func_name_length,
+				&lkey, 0, &p);
+		zend_hash_get_current_data_ex(counts, (void**)&count, &p);
 		if (units == LUASANDBOX_SAMPLES) {
-			add_assoc_long_ex(return_value, p->arKey, p->nKeyLength, count);
+			add_assoc_long_ex(return_value, func_name, func_name_length, count);
 		} else {
-			add_assoc_double_ex(return_value, p->arKey, p->nKeyLength, count * scale);
+			add_assoc_double_ex(return_value, func_name, func_name_length, count * scale);
 		}
 	}
 
@@ -1493,7 +1491,7 @@ PHP_METHOD(LuaSandbox, registerLibrary)
 	int libname_len = 0;
 	zval * zfunctions = NULL;
 	HashTable * functions;
-	Bucket * p;
+	HashPosition p;
 
 	CHECK_VALID_STATE(L);
 
@@ -1515,19 +1513,31 @@ PHP_METHOD(LuaSandbox, registerLibrary)
 		lua_pop(L, 1);
 
 		// Create the new table
-		lua_createtable(L, 0, functions->nNumOfElements);
+		lua_createtable(L, 0, zend_hash_num_elements(functions));
 	}
 
-	for (p = functions->pListHead; p; p = p->pListNext) {
+	for (zend_hash_internal_pointer_reset_ex(functions, &p);
+			zend_hash_get_current_key_type_ex(functions, &p) != HASH_KEY_NON_EXISTANT;
+			zend_hash_move_forward_ex(functions, &p))
+	{
+		char * key = "";
+		uint key_length = 0;
+		ulong lkey = 0;
+		zval ** callback;
+
+		int key_type = zend_hash_get_current_key_ex(functions, &key, &key_length,
+				&lkey, 0, &p);
+		zend_hash_get_current_data_ex(functions, (void**)&callback, &p);
+
 		// Push the key
-		if (p->nKeyLength) {
-			lua_pushlstring(L, p->arKey, p->nKeyLength - 1);
+		if (key_type == HASH_KEY_IS_STRING) {
+			lua_pushlstring(L, key, key_length - 1);
 		} else {
-			lua_pushinteger(L, p->h);
+			lua_pushinteger(L, lkey);
 		}
 
 		// Push the callback zval and create the closure
-		luasandbox_push_zval_userdata(L, *(zval**)p->pData);
+		luasandbox_push_zval_userdata(L, *callback);
 		lua_pushcclosure(L, luasandbox_call_php, 1);
 
 		// Add it to the table
@@ -1568,7 +1578,7 @@ int luasandbox_call_php(lua_State * L)
 	
 	luasandbox_enter_php(L, intern);
 
-	zval ** callback_pp = lua_touserdata(L, lua_upvalueindex(1));
+	zval ** callback_pp = (zval**)lua_touserdata(L, lua_upvalueindex(1));
 	zval *retval_ptr = NULL;
 	zend_fcall_info fci;
 	zend_fcall_info_cache fcc;
@@ -1580,7 +1590,8 @@ int luasandbox_call_php(lua_State * L)
 	zval ***double_pointers;
 	int num_results = 0;
 	int status;
-	Bucket *bucket;	
+	HashPosition p;	
+	HashTable * ht;
 	TSRMLS_FETCH();
 
 	// Based on zend_parse_arg_impl()
@@ -1601,7 +1612,7 @@ int luasandbox_call_php(lua_State * L)
 
 	// Make an array of zval double-pointers to hold the arguments
 	int args_failed = 0;
-	temp = ecalloc(top, sizeof(void*) * 2);
+	temp = (void**)ecalloc(top, sizeof(void*) * 2);
 	double_pointers = (zval***)temp;
 	pointers = (zval**)(temp + top);
 	for (i = 0; i < top; i++ ) {
@@ -1638,11 +1649,15 @@ int luasandbox_call_php(lua_State * L)
 			if (Z_TYPE_PP(fci.retval_ptr_ptr) == IS_NULL) {
 				// No action
 			} else if (Z_TYPE_PP(fci.retval_ptr_ptr) == IS_ARRAY) {
-				bucket = Z_ARRVAL_PP(fci.retval_ptr_ptr)->pListHead;
-				luaL_checkstack(L, Z_ARRVAL_PP(fci.retval_ptr_ptr)->nNumOfElements + 10, "converting PHP return array to Lua");
-				while (bucket) {
-					luasandbox_push_zval(L, *((zval **)bucket->pData));
-					bucket = bucket->pListNext;
+				ht = Z_ARRVAL_PP(fci.retval_ptr_ptr);
+				luaL_checkstack(L, zend_hash_num_elements(ht) + 10, "converting PHP return array to Lua");
+				for (zend_hash_internal_pointer_reset_ex(ht, &p);
+						zend_hash_get_current_key_type_ex(ht, &p) != HASH_KEY_NON_EXISTANT;
+						zend_hash_move_forward_ex(ht, &p))
+				{
+					zval ** value;
+					zend_hash_get_current_data_ex(ht, (void**)&value, &p);
+					luasandbox_push_zval(L, *value);
 					num_results++;
 				}
 			} else {

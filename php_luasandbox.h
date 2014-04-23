@@ -117,7 +117,7 @@ static inline void luasandbox_leave_php(lua_State * L, php_luasandbox_obj * inte
 /* library.c */
 
 void luasandbox_lib_register(lua_State * L TSRMLS_DC);
-void luasandbox_lib_destroy_globals(zend_luasandbox_globals * g TSRMLS_DC);
+void luasandbox_lib_destroy_globals(TSRMLS_D);
 
 /* luasandbox_lstrlib.c */
 

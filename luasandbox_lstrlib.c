@@ -889,7 +889,7 @@ static void createmetatable (lua_State *L) {
 /*
 ** Open string library
 */
-LUALIB_API int luasandbox_open_string (lua_State *L) {
+int luasandbox_open_string (lua_State *L) {
   luaL_register(L, LUA_STRLIBNAME, strlib);
 #if defined(LUA_COMPAT_GFIND)
   lua_getfield(L, -1, "gmatch");

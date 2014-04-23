@@ -259,7 +259,7 @@ static char * luasandbox_timer_get_cfunction_name(lua_State *L)
 	}
 
 	lua_getupvalue(L, -1, 1);
-	zval ** callback_pp = lua_touserdata(L, -1);
+	zval ** callback_pp = (zval**)lua_touserdata(L, -1);
 	if (!callback_pp || !*callback_pp) {
 		return NULL;
 	}
@@ -364,7 +364,7 @@ int luasandbox_timer_enable_profiler(luasandbox_timer_set * lts, struct timespec
 			}
 		}
 		LUASANDBOX_G(profiler_timer_idx) = cur;
-		lts->function_counts = emalloc(sizeof(HashTable));
+		ALLOC_HASHTABLE(lts->function_counts);
 		zend_hash_init(lts->function_counts, 0, NULL, NULL, 0);
 
 		lts->profiler_running = 1;

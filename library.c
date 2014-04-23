@@ -212,12 +212,12 @@ static void luasandbox_lib_filter_table(lua_State * L, char ** member_names)
 /* }}} */
 
 /** {{{ luasandbox_lib_destroy_globals */
-void luasandbox_lib_destroy_globals(zend_luasandbox_globals * g TSRMLS_DC)
+void luasandbox_lib_destroy_globals(TSRMLS_D)
 {
-	if (g->allowed_globals) {
-		zend_hash_destroy(g->allowed_globals);
-		pefree(g->allowed_globals, 1);
-		g->allowed_globals = NULL;
+	if (LUASANDBOX_G(allowed_globals)) {
+		zend_hash_destroy(LUASANDBOX_G(allowed_globals));
+		FREE_HASHTABLE(LUASANDBOX_G(allowed_globals));
+		LUASANDBOX_G(allowed_globals) = NULL;
 	}
 }
 /* }}} */
@@ -235,12 +235,12 @@ static HashTable * luasandbox_lib_get_allowed_globals(TSRMLS_D)
 
 	for (n = 0; luasandbox_allowed_globals[n]; n++);
 
-	LUASANDBOX_G(allowed_globals) = pemalloc(sizeof(HashTable), 1);
-	zend_hash_init(LUASANDBOX_G(allowed_globals), n, NULL, NULL, 1);
+	ALLOC_HASHTABLE(LUASANDBOX_G(allowed_globals));
+	zend_hash_init(LUASANDBOX_G(allowed_globals), n, NULL, NULL, 0);
 	for (i = 0; luasandbox_allowed_globals[i]; i++) {
 		zend_hash_update(LUASANDBOX_G(allowed_globals), 
 			luasandbox_allowed_globals[i], strlen(luasandbox_allowed_globals[i]) + 1,
-			"", 1, NULL);
+			(void*)"", 1, NULL);
 	}
 
 	return LUASANDBOX_G(allowed_globals);
