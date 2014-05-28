@@ -798,7 +798,7 @@ PHP_METHOD(LuaSandbox, setCPULimit)
 	struct timespec normal = {0, 0};
 	struct timespec emergency = {0, 0};
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z|z",
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z/|z/",
 		&zp_normal, &zp_emergency) == FAILURE)
 	{
 		RETURN_FALSE;
@@ -810,7 +810,7 @@ PHP_METHOD(LuaSandbox, setCPULimit)
 		// No limit
 		sandbox->is_cpu_limited = 0;
 	} else {
-		convert_to_double_ex(&zp_normal);
+		convert_to_double(zp_normal);
 		luasandbox_set_timespec(&normal, Z_DVAL_P(zp_normal));
 		sandbox->is_cpu_limited = 1;
 	}
@@ -820,7 +820,7 @@ PHP_METHOD(LuaSandbox, setCPULimit)
 	{
 		// No emergency limit
 	} else {
-		convert_to_double_ex(&zp_emergency);
+		convert_to_double(zp_emergency);
 		luasandbox_set_timespec(&emergency, Z_DVAL_P(zp_emergency));
 	}
 
