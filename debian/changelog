@@ -1,4 +1,4 @@
-php-luasandbox (1.9-2) UNRELEASED; urgency=medium
+php-luasandbox (2.0-1) unstable; urgency=medium
 
   * Various Debian packaging fixes
     - Bump to debhelper compatibility level 9
@@ -9,6 +9,8 @@ php-luasandbox (1.9-2) UNRELEASED; urgency=medium
       clarify that the license is the Expat variant.
     - Add dependency on the phpapi virtual package.
     - Switch to the 3.0 (native) source format.
+  * Add an hhvm-luasandbox package and add hacks to build the source twice,
+    once for PHP and once for HHVM.
 
  -- Faidon Liambotis <faidon@wikimedia.org>  Fri, 27 Jun 2014 16:18:05 +0000
 

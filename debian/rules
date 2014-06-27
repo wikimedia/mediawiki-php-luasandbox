@@ -1,19 +1,44 @@
 #!/usr/bin/make -f
 
+DEBVERSION=$(shell dpkg-parsechangelog | sed -n 's/^Version: //p')
+
 %:
 	dh $@
 
 override_dh_auto_configure:
-	/usr/bin/phpize
-	dh_auto_configure
+	echo "#define LUASANDBOX_VERSION \"$(DEBVERSION)\"" > luasandbox_version.h
+	mkdir -p debian/build-php debian/build-hhvm
+	## PHP
+	tar -cf - --exclude=debian/build* --exclude=.pc . \
+		| tar -xf - -C debian/build-php
+	cd debian/build-php && /usr/bin/phpize && dh_auto_configure
+	## HHVM
+	tar -cf - --exclude=debian/build* --exclude=.pc . \
+		| tar -xf - -C debian/build-hhvm
+	cd debian/build-hhvm && /usr/bin/hphpize
+	# workaround "cmake .." bug in HHVM's CMake extension code
+	cd debian/build-hhvm && cmake . \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_VERBOSE_MAKEFILE=ON \
+		-DCMAKE_BUILD_TYPE=None
+	cd debian/build-hhvm && dh_auto_configure
+
+override_dh_auto_build:
+	cd debian/build-php  && dh_auto_build
+	cd debian/build-hhvm && dh_auto_build
 
 override_dh_auto_test:
 
 override_dh_auto_install:
-	INSTALL_ROOT=$(CURDIR)/debian/php-luasandbox make install
+	INSTALL_ROOT=$(CURDIR)/debian/php-luasandbox make -C debian/build-php install
+	DESTDIR=$(CURDIR)/debian/hhvm-luasandbox make -C debian/build-hhvm install
 
 override_dh_gencontrol:
 	echo "php:Depends=phpapi-$(shell php-config5 --phpapi)" >> debian/php-luasandbox.substvars
 	dh_gencontrol
 
-.PHONY: override_dh_auto_configure override_dh_auto_test override_dh_auto_install override_dh_gencontrol
+override_dh_auto_clean:
+	-rm -r debian/build*
+	dh_auto_clean
+
+.PHONY: override_dh_auto_configure override_dh_auto_build override_dh_auto_test override_dh_auto_install override_dh_gencontrol
