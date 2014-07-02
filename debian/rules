@@ -1,12 +1,9 @@
 #!/usr/bin/make -f
 
-DEBVERSION=$(shell dpkg-parsechangelog | sed -n 's/^Version: //p')
-
 %:
 	dh $@
 
 override_dh_auto_configure:
-	echo "#define LUASANDBOX_VERSION \"$(DEBVERSION)\"" > luasandbox_version.h
 	mkdir -p debian/build-php debian/build-hhvm
 	## PHP
 	tar -cf - --exclude=debian/build* --exclude=.pc . \

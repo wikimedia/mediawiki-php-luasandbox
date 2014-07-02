@@ -3,6 +3,11 @@ if (!LUA51_FOUND)
 	message(FATAL_ERROR "unable to find Lua 5.1")
 endif()
 
+# Parse version string from debian/changelog and use it to generate luasandbox_version.h
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/debian/changelog" CHANGELOG)
+string(REGEX REPLACE "\\s*php-luasandbox \\(([0-9._-]+).*" "\\1" LUASANDBOX_VERSION "${CHANGELOG}" )
+file(WRITE ${CMAKE_CURRENT_SOURCE_DIR}/luasandbox_version.h "\#define LUASANDBOX_VERSION \"${LUASANDBOX_VERSION}\"\n")
+
 HHVM_COMPAT_EXTENSION(luasandbox
 	alloc.c
 	data_conversion.c
