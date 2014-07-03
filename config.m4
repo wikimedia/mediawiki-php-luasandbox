@@ -6,8 +6,9 @@ AC_PREREQ(2.50)
 PHP_ARG_WITH(luasandbox, for luasandbox support,
 [  --with-luasandbox             Include luasandbox support])
 
-$SED -n -e '0,/^php-luasandbox/{s/php-luasandbox (\(.*\)).*/#define LUASANDBOX_VERSION "\1"/p}' \
-        $srcdir/debian/changelog > $srcdir/luasandbox_version.h
+$GREP -m1 php-luasandbox $srcdir/debian/changelog \
+        | $SED -e 's/.*(/#define LUASANDBOX_VERSION "/' -e 's/).*/"/' \
+        > $srcdir/luasandbox_version.h
 
 if test "$PHP_LUASANDBOX" != "no"; then
 	dnl Include pkg-config macros definitions:
