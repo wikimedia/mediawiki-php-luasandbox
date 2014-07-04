@@ -15,7 +15,7 @@
 
 #ifdef HHVM
 #include <set>
-static HPHP::ThreadLocal<std::set<HashTable*>> protectionSet;
+static IMPLEMENT_THREAD_LOCAL(std::set<HashTable*>, protectionSet);
 using std::isfinite;
 #endif
 
