@@ -136,6 +136,7 @@ static void luasandbox_timer_handle_signal(int signo, siginfo_t * info, void * c
 
 	lua_State * L = data->sandbox->state;
 
+#ifndef HHVM
 	if (data->type == LUASANDBOX_TIMER_EMERGENCY) {
 		sigset_t set;
 		sigemptyset(&set);
@@ -153,7 +154,9 @@ static void luasandbox_timer_handle_signal(int signo, siginfo_t * info, void * c
 			luasandbox_wrap_fatal(L);
 			lua_error(L);
 		}
-	} else {
+	} else
+#endif
+	{
 		luasandbox_timer_set * lts = &data->sandbox->timer;
 		if (luasandbox_timer_is_paused(lts)) {
 			// The timer is paused. luasandbox_timer_unpause will reschedule when unpaused.

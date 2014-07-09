@@ -815,6 +815,7 @@ PHP_METHOD(LuaSandbox, setCPULimit)
 		sandbox->is_cpu_limited = 1;
 	}
 
+#ifndef HHVM
 	if (!zp_emergency
 		|| (Z_TYPE_P(zp_emergency) == IS_BOOL && Z_BVAL_P(zp_emergency) == 0))
 	{
@@ -823,6 +824,7 @@ PHP_METHOD(LuaSandbox, setCPULimit)
 		convert_to_double(zp_emergency);
 		luasandbox_set_timespec(&emergency, Z_DVAL_P(zp_emergency));
 	}
+#endif
 
 	// Set the timer
 	luasandbox_timer_set_limits(&sandbox->timer, &normal, &emergency);

@@ -1,5 +1,7 @@
 --TEST--
 Functions called on an invalid LuaSandbox, after emergency timeout
+--SKIPIF--
+<?php if(defined("HPHP_VERSION")) print "skip"; ?>
 --FILE--
 <?php
 $sandbox = new LuaSandbox;
