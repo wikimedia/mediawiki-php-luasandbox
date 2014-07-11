@@ -1041,7 +1041,7 @@ PHP_METHOD(LuaSandbox, getProfilerFunctionReport)
 			zend_hash_get_current_key_type_ex(counts, &p) != HASH_KEY_NON_EXISTANT;
 			zend_hash_move_forward_ex(counts, &p))
 	{
-		size_t count;
+		size_t *count;
 		char * func_name = "";
 		uint func_name_length = 0;
 		ulong lkey;
@@ -1050,9 +1050,9 @@ PHP_METHOD(LuaSandbox, getProfilerFunctionReport)
 				&lkey, 0, &p);
 		zend_hash_get_current_data_ex(counts, (void**)&count, &p);
 		if (units == LUASANDBOX_SAMPLES) {
-			add_assoc_long_ex(return_value, func_name, func_name_length, count);
+			add_assoc_long_ex(return_value, func_name, func_name_length, *count);
 		} else {
-			add_assoc_double_ex(return_value, func_name, func_name_length, count * scale);
+			add_assoc_double_ex(return_value, func_name, func_name_length, *count * scale);
 		}
 	}
 
