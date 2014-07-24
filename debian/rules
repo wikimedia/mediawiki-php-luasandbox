@@ -14,10 +14,12 @@ override_dh_auto_configure:
 		| tar -xf - -C debian/build-hhvm
 	cd debian/build-hhvm && /usr/bin/hphpize
 	# workaround "cmake .." bug in HHVM's CMake extension code
+	# Also, link to lua-c++
 	cd debian/build-hhvm && cmake . \
 		-DCMAKE_INSTALL_PREFIX=/usr \
 		-DCMAKE_VERBOSE_MAKEFILE=ON \
-		-DCMAKE_BUILD_TYPE=None
+		-DCMAKE_BUILD_TYPE=None \
+		-DLUA_USE_CPP=1
 	cd debian/build-hhvm && dh_auto_configure
 
 override_dh_auto_build:
