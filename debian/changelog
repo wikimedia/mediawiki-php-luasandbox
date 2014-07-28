@@ -1,15 +1,20 @@
+php-luasandbox (2.0-4) trusty-wikimedai; urgency=medium
+
+  * Make the package depend on hhvm version, new build for hhvm 
+
+ -- Giuseppe Lavagetto <glavagetto@wikimedia.org>  Mon, 28 Jul 2014 18:09:48 +0200
+
 php-luasandbox (2.0-3) trusty-wikimedia; urgency=medium
 
   * Make HHVM compile against liblua5.1-c++, fixes bug #68196
 
- -- Giuseppe Lavagetto <glavagetto@wikimedia.org> Wed, 23 Jul 2014 15:45:00 +0000
-
+ -- Giuseppe Lavagetto <glavagetto@wikimedia.org>  Wed, 23 Jul 2014 15:45:00 +0000
 
 php-luasandbox (2.0-2) trusty-wikimedia; urgency=medium
 
   * Rebuilt against the new hhvm ABI
 
- -- Giuseppe Lavagetto <glavagetto@wikimedia.org> Wed, 23 Jul 2014 15:45:00 +0000
+ -- Giuseppe Lavagetto <glavagetto@wikimedia.org>  Wed, 23 Jul 2014 15:45:00 +0000
 
 php-luasandbox (2.0-1) unstable; urgency=medium
 
