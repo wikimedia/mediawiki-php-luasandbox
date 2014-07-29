@@ -17,7 +17,7 @@ Description: Lua extension for PHP
 
 Package: hhvm-luasandbox
 Architecture: any
-Depends: hhvm (= ${hhvm:Depends}), ${shlibs:Depends}, ${misc:Depends}
+Depends: ${hhvm:ApiVersion}, ${shlibs:Depends}, ${misc:Depends}
 Description: Lua extension for HHVM
  A HHVM extension providing a sandboxed Lua environment which can be used to run
  untrusted code.
