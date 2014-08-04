@@ -35,7 +35,7 @@ override_dh_auto_install:
 override_dh_gencontrol:
 	echo "php:Depends=phpapi-$(shell php-config5 --phpapi)" >> debian/php-luasandbox.substvars
 	# HHVM does *not* ensure binary compatibility
-	echo "hhvm:ApiVersion=hhvm-api-$(shell ./debian/hhvm/usr/bin/hhvm --version | sed -ne 's/^Extension API:\ //p')" >> debian/hhvm-luasandbox.substvars
+	echo "hhvm:ApiVersion=hhvm-api-$(shell /usr/bin/hhvm --version | sed -ne 's/^Extension API:\ //p')" >> debian/hhvm-luasandbox.substvars
 	dh_gencontrol
 
 override_dh_auto_clean:
