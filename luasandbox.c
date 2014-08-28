@@ -36,7 +36,6 @@ static lua_State * luasandbox_newstate(php_luasandbox_obj * intern TSRMLS_DC);
 static void luasandbox_free_storage(void *object TSRMLS_DC);
 static zend_object_value luasandboxfunction_new(zend_class_entry *ce TSRMLS_DC);
 static void luasandboxfunction_free_storage(void *object TSRMLS_DC);
-static void luasandboxfunction_destroy(void *object, zend_object_handle handle TSRMLS_DC);
 static int luasandbox_panic(lua_State * L);
 static lua_State * luasandbox_state_from_zval(zval * this_ptr TSRMLS_DC);
 static void luasandbox_load_helper(int binary, INTERNAL_FUNCTION_PARAMETERS);
@@ -442,7 +441,7 @@ static zend_object_value luasandboxfunction_new(zend_class_entry *ce TSRMLS_DC)
 	// Put the object into the store
 	retval.handle = zend_objects_store_put(
 		intern,
-		(zend_objects_store_dtor_t)luasandboxfunction_destroy,
+		(zend_objects_store_dtor_t)zend_objects_destroy_object,
 		(zend_objects_free_object_storage_t)luasandboxfunction_free_storage,
 		NULL TSRMLS_CC);
 	retval.handlers = zend_get_std_object_handlers();
@@ -450,13 +449,13 @@ static zend_object_value luasandboxfunction_new(zend_class_entry *ce TSRMLS_DC)
 }
 /* }}} */
 
-/** {{{ luasandboxfunction_destroy 
+/** {{{ luasandboxfunction_free_storage
  *
- * Destructor for the LuaSandboxFunction class. Deletes the chunk from the
- * registry and decrements the reference counter for the parent LuaSandbox
- * object.
+ * "Free storage" handler for LuaSandboxFunction objects. Deletes the chunk
+ * from the registry and decrements the reference counter for the parent
+ * LuaSandbox object.
  */
-static void luasandboxfunction_destroy(void *object, zend_object_handle handle TSRMLS_DC)
+static void luasandboxfunction_free_storage(void *object TSRMLS_DC)
 {
 	php_luasandboxfunction_obj * func = (php_luasandboxfunction_obj*)object;
 	if (func->sandbox) {
@@ -477,16 +476,6 @@ static void luasandboxfunction_destroy(void *object, zend_object_handle handle T
 		// Delete the parent reference
 		zval_ptr_dtor(&func->sandbox);
 	}
-}
-/* }}} */
-
-/** {{{ luasandboxfunction_free_storage
- *
- * "Free storage" handler for LuaSandboxFunction objects.
- */
-static void luasandboxfunction_free_storage(void *object TSRMLS_DC)
-{
-	php_luasandboxfunction_obj * func = (php_luasandboxfunction_obj*)object;
 	zend_object_std_dtor(&func->std TSRMLS_CC);
 	efree(object);
 }
