@@ -1,4 +1,10 @@
-php-luasandbox (2.0-4) trusty-wikimedai; urgency=medium
+php-luasandbox (2.0-5) trusty-wikimeda; urgency=medium
+
+  * Fix a memory leak under HHVM
+
+ -- Giuseppe Lavagetto <glavagetto@wikimedia.org>  Thu, 28 Aug 2014 21:09:34 +0200
+
+php-luasandbox (2.0-4) trusty-wikimeda; urgency=medium
 
   * Make the package depend on hhvm version, new build for hhvm 
 
