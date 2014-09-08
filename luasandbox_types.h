@@ -4,37 +4,31 @@
 #include <semaphore.h>
 #include "php.h"
 
-#define MAX_PROFILING_CLOCKS 20
+#define LUASANDBOX_MAX_TIMERS 20
 
 #ifdef CLOCK_REALTIME
 
 struct _php_luasandbox_obj;
 
-typedef struct {
+typedef struct _luasandbox_timer {
+	struct _php_luasandbox_obj * sandbox;
+	timer_t timer;
+	clockid_t clock_id;
 	int type;
 	sem_t semaphore;
-	struct _php_luasandbox_obj * sandbox;
-} luasandbox_timer_callback_data;
-
-typedef struct {
-	timer_t timer;
-	luasandbox_timer_callback_data cbdata;
 } luasandbox_timer;
 
 typedef struct {
-	luasandbox_timer normal_timer;
-	luasandbox_timer emergency_timer;
+	luasandbox_timer *limiter_timer;
 	luasandbox_timer *profiler_timer;
-	struct timespec normal_limit, normal_remaining;
-	struct timespec emergency_limit, emergency_remaining;
+	struct timespec limiter_limit, limiter_remaining;
 	struct timespec usage_start, usage;
 	struct timespec pause_start, pause_delta;
-	struct timespec normal_expired_at;
+	struct timespec limiter_expired_at;
 	struct timespec profiler_period;
 	struct _php_luasandbox_obj * sandbox;
 	int is_running;
-	int normal_running;
-	int emergency_running;
+	int limiter_running;
 	int profiler_running;
 
 	// A HashTable storing the number of times each function was hit by the 
@@ -66,16 +60,15 @@ typedef struct {
 #endif /*CLOCK_REALTIME*/
 
 ZEND_BEGIN_MODULE_GLOBALS(luasandbox)
-	int signal_handler_installed;
-	struct sigaction old_handler;
 	HashTable * allowed_globals;
 
 #ifdef CLOCK_REALTIME
 	/* We need a global array of timers, because SIGEV_THREAD may still fire
 	 * the timer well after timer_delete is called. Thanks, POSIX. */
-	int profiler_timer_idx;
-	luasandbox_timer profiler_timers[MAX_PROFILING_CLOCKS];
+	int timer_idx;
+	luasandbox_timer timers[LUASANDBOX_MAX_TIMERS];
 #endif
+	long active_count;
 ZEND_END_MODULE_GLOBALS(luasandbox)
 
 typedef struct {
@@ -94,7 +87,6 @@ struct _php_luasandbox_obj {
 	int in_lua;
 	zval * current_zval; /* The zval for the LuaSandbox which is currently executing Lua code */
 	volatile int timed_out;
-	volatile int emergency_timed_out;
 	int is_cpu_limited;
 	luasandbox_timer_set timer;
 	int function_index;

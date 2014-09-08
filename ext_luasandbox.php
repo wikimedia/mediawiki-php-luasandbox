@@ -7,7 +7,7 @@
 	<<__Native("ZendCompat")>> function setMemoryLimit(mixed $limit): mixed;
 	<<__Native("ZendCompat")>> function getMemoryUsage(): mixed;
 	<<__Native("ZendCompat")>> function getPeakMemoryUsage(): mixed;
-	<<__Native("ZendCompat")>> function setCPULimit(mixed $normal_limit, mixed $emergency_limit): mixed;
+	<<__Native("ZendCompat")>> function setCPULimit(mixed $limit): mixed;
 	<<__Native("ZendCompat")>> function getCPUUsage(): mixed;
 	<<__Native("ZendCompat")>> function pauseUsageTimer(): mixed;
 	<<__Native("ZendCompat")>> function unpauseUsageTimer(): mixed;

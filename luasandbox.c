@@ -48,7 +48,6 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval,
 	php_luasandbox_obj * sandbox,
 	zval *** args, zend_uint numArgs, zval * return_value TSRMLS_DC);
 static void luasandbox_handle_error(php_luasandbox_obj * sandbox, int status TSRMLS_DC);
-static void luasandbox_handle_emergency_timeout(php_luasandbox_obj * sandbox TSRMLS_DC);
 static int luasandbox_dump_writer(lua_State * L, const void * p, size_t sz, void * ud);
 static zend_bool luasandbox_instanceof(
 	zend_class_entry *child_class, zend_class_entry *parent_class);
@@ -100,8 +99,7 @@ ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_getPeakMemoryUsage, 0)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_setCPULimit, 0)
-	ZEND_ARG_INFO(0, normal_limit)
-	ZEND_ARG_INFO(0, emergency_limit)
+	ZEND_ARG_INFO(0, limit)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_getCPUUsage, 0)
@@ -271,6 +269,7 @@ PHP_MINIT_FUNCTION(luasandbox)
 	luasandboxtimeouterror_ce = zend_register_internal_class_ex(
 			&ce, luasandboxfatalerror_ce, NULL TSRMLS_CC);
 
+	// Deprecated, for catch blocks only
 	INIT_CLASS_ENTRY(ce, "LuaSandboxEmergencyTimeoutError", luasandbox_empty_methods);
 	luasandboxemergencytimeouterror_ce = zend_register_internal_class_ex(
 		&ce, luasandboxfatalerror_ce, NULL TSRMLS_CC);
@@ -307,6 +306,14 @@ PHP_MSHUTDOWN_FUNCTION(luasandbox)
 /* {{{ PHP_RSHUTDOWN_FUNCTION */
 PHP_RSHUTDOWN_FUNCTION(luasandbox)
 {
+#ifdef HHVM
+	// Under HHVM, free_storage handlers are not called on request shutdown
+	if (LUASANDBOX_G(active_count)) {
+		php_error(E_WARNING, "leaking %ld LuaSandbox object(s)",
+			LUASANDBOX_G(active_count));
+		LUASANDBOX_G(active_count) = 0;
+	}
+#endif
 	return SUCCESS;
 }
 /* }}} */
@@ -314,10 +321,6 @@ PHP_RSHUTDOWN_FUNCTION(luasandbox)
 static int luasandbox_post_deactivate() /* {{{ */
 {
 	TSRMLS_FETCH();
-	if (LUASANDBOX_G(signal_handler_installed)) {
-		luasandbox_timer_remove_handler(&LUASANDBOX_G(old_handler));
-		LUASANDBOX_G(signal_handler_installed) = 0;
-	}
 	luasandbox_lib_destroy_globals(TSRMLS_C);
 	return SUCCESS;
 }
@@ -365,6 +368,7 @@ static zend_object_value luasandbox_new(zend_class_entry *ce TSRMLS_DC)
 		(zend_objects_free_object_storage_t)luasandbox_free_storage, 
 		NULL TSRMLS_CC);
 	retval.handlers = zend_get_std_object_handlers();
+	LUASANDBOX_G(active_count)++;
 	return retval;
 }
 /* }}} */
@@ -418,6 +422,7 @@ static void luasandbox_free_storage(void *object TSRMLS_DC)
 	}
 	zend_object_std_dtor(&sandbox->std TSRMLS_CC);
 	efree(object);
+	LUASANDBOX_G(active_count)--;
 }
 /* }}} */
 
@@ -646,23 +651,6 @@ PHP_METHOD(LuaSandbox, loadBinary)
 }
 /* }}} */
 
-/** {{{ luasandbox_handle_emergency_timeout
- *
- * Handle the situation where the emergency_timeout flag is set. Throws an 
- * appropriate exception and destroys the state.
- */
-static void luasandbox_handle_emergency_timeout(php_luasandbox_obj * sandbox TSRMLS_DC)
-{
-	lua_close(sandbox->state);
-	sandbox->state = NULL;
-	sandbox->emergency_timed_out = 0;
-	zend_throw_exception(luasandboxemergencytimeouterror_ce, 
-		"The maximum execution time was exceeded "
-		"and the current Lua statement failed to return, leading to "
-		"destruction of the Lua state", LUA_ERRRUN TSRMLS_CC);
-}
-/* }}} */
-
 /** {{{ luasandbox_handle_error
  *
  * Handles the error return situation from lua_pcall() and lua_load(), where a 
@@ -757,66 +745,47 @@ PHP_METHOD(LuaSandbox, setMemoryLimit)
 /* }}} */
 
 
-/** {{{ proto void LuaSandbox::setCPULimit(mixed normal_limit, mixed emergency_limit = false)
+/** {{{ proto void LuaSandbox::setCPULimit(mixed limit)
  *
  * Set the limit of CPU time (user+system) for all LuaSandboxFunction::call()
- * calls against this LuaSandbox instance. There are two time limits, which 
- * are both specified in seconds. Set a time limit to false to disable it.
+ * calls against this LuaSandbox instance. The limit is specified in seconds,
+ * or false to disable the limiter.
  *
- * When the "normal" time limit expires, a flag will be set which causes 
- * a LuaSandboxError exception to be thrown when the currently-running Lua 
+ * When the time limit expires, a flag will be set which causes a
+ * LuaSandboxError exception to be thrown when the currently-running Lua
  * statement finishes.
- *
- * When the "emergency" time limit expires, execution is terminated immediately.
- * If PHP code was running, this results in the current PHP request being in an
- * undefined state, so a PHP fatal error is raised. If PHP code was not
- * running, the Lua state is destroyed and then recreated with an empty state. 
- * Any LuaSandboxFunction objects which referred to the old state will stop 
- * working. A LuaSandboxEmergencyTimeout exception is thrown.
  *
  * Setting the time limit from a callback while Lua is running causes the timer
  * to be reset, or started if it was not already running.
  */
 PHP_METHOD(LuaSandbox, setCPULimit)
 {
-	zval *zp_normal = NULL, *zp_emergency = NULL;
+	zval *zp_limit = NULL;
 
 	php_luasandbox_obj * sandbox = (php_luasandbox_obj*) 
 		zend_object_store_get_object(getThis() TSRMLS_CC);
 
-	struct timespec normal = {0, 0};
-	struct timespec emergency = {0, 0};
+	struct timespec limit = {0, 0};
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z/|z/",
-		&zp_normal, &zp_emergency) == FAILURE)
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z/",
+		&zp_limit) == FAILURE)
 	{
 		RETURN_FALSE;
 	}
 
-	if (!zp_normal
-		|| (Z_TYPE_P(zp_normal) == IS_BOOL && Z_BVAL_P(zp_normal) == 0))
+	if (!zp_limit
+		|| (Z_TYPE_P(zp_limit) == IS_BOOL && Z_BVAL_P(zp_limit) == 0))
 	{
 		// No limit
 		sandbox->is_cpu_limited = 0;
 	} else {
-		convert_to_double(zp_normal);
-		luasandbox_set_timespec(&normal, Z_DVAL_P(zp_normal));
+		convert_to_double(zp_limit);
+		luasandbox_set_timespec(&limit, Z_DVAL_P(zp_limit));
 		sandbox->is_cpu_limited = 1;
 	}
 
-#ifndef HHVM
-	if (!zp_emergency
-		|| (Z_TYPE_P(zp_emergency) == IS_BOOL && Z_BVAL_P(zp_emergency) == 0))
-	{
-		// No emergency limit
-	} else {
-		convert_to_double(zp_emergency);
-		luasandbox_set_timespec(&emergency, Z_DVAL_P(zp_emergency));
-	}
-#endif
-
 	// Set the timer
-	luasandbox_timer_set_limits(&sandbox->timer, &normal, &emergency);
+	luasandbox_timer_set_limit(&sandbox->timer, &limit);
 }
 /* }}} */
 
@@ -865,8 +834,7 @@ PHP_METHOD(LuaSandbox, getCPUUsage)
 
 /** {{{ proto bool LuaSandbox::pauseUsageTimer()
  *
- * Pause the CPU usage timer, and the "normal" time limit set by LuaSandbox::setCPULimit.
- * Does not pause the "emergency" time limit set by LuaSandbox::setCPULimit.
+ * Pause the CPU usage timer, and the time limit set by LuaSandbox::setCPULimit.
  *
  * This only has effect when called from within a callback from Lua. When
  * execution returns to Lua, the timers will be automatically unpaused. If a
@@ -1286,12 +1254,12 @@ int luasandbox_call_lua(php_luasandbox_obj * sandbox, zval * sandbox_zval,
 				LUA_ERRRUN TSRMLS_CC);
 			return 0;
 		}
-		timer_started = 1;
-		if (!LUASANDBOX_G(signal_handler_installed)) {
-			luasandbox_timer_install_handler(&LUASANDBOX_G(old_handler));
-			LUASANDBOX_G(signal_handler_installed) = 1;
+		if (luasandbox_timer_start(&sandbox->timer)) {
+			timer_started = 1;
+		} else {
+			php_error_docref(NULL TSRMLS_CC, E_WARNING,
+				"Unable to start limit timer");
 		}
-		luasandbox_timer_start(&sandbox->timer);
 	}
 
 	// Save the current zval for later use in luasandbox_call_php. Restore it
@@ -1321,10 +1289,6 @@ int luasandbox_call_lua(php_luasandbox_obj * sandbox, zval * sandbox_zval,
 	// Stop the timer
 	if (timer_started) {
 		luasandbox_timer_stop(&sandbox->timer);
-	}
-	if (sandbox->emergency_timed_out) {
-		luasandbox_handle_emergency_timeout(sandbox TSRMLS_CC);
-		return 0;
 	}
 
 	// Handle normal errors
