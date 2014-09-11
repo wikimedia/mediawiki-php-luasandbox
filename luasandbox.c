@@ -278,6 +278,8 @@ PHP_MINIT_FUNCTION(luasandbox)
 	luasandboxfunction_ce = zend_register_internal_class(&ce TSRMLS_CC);
 	luasandboxfunction_ce->create_object = luasandboxfunction_new;
 
+	luasandbox_timer_minit(TSRMLS_C);
+
 	return SUCCESS;
 }
 /* }}} */
@@ -299,6 +301,7 @@ static PHP_GSHUTDOWN_FUNCTION(luasandbox)
  */
 PHP_MSHUTDOWN_FUNCTION(luasandbox)
 {
+	luasandbox_timer_mshutdown(TSRMLS_C);
 	return SUCCESS;
 }
 /* }}} */

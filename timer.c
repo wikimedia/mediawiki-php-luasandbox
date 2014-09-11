@@ -20,6 +20,9 @@ char luasandbox_timeout_message[] = "The maximum execution time for this script 
 
 #ifdef LUASANDBOX_NO_CLOCK
 
+void luasandbox_timer_minit(TSRMLS_D) {}
+void luasandbox_timer_mshutdown(TSRMLS_D) {}
+
 void luasandbox_timer_create(luasandbox_timer_set * lts,
 		php_luasandbox_obj * sandbox) {
 	lts->is_paused = 0;
@@ -62,12 +65,20 @@ enum {
 	LUASANDBOX_TIMER_PROFILER
 };
 
+// Value 0 to 1. Lower means more reallocating, higher means slower lookup.
+#define TIMER_HASH_LOAD_FACTOR 0.75
+pthread_rwlock_t timer_hash_rwlock;
+luasandbox_timer **timer_hash;
+size_t timer_hash_entries, timer_hash_size;
+int timer_next_id = 1;
+
 static void luasandbox_timer_handle_event(union sigval sv);
 static void luasandbox_timer_handle_profiler(luasandbox_timer * lt);
 static void luasandbox_timer_handle_limiter(luasandbox_timer * lt);
 static luasandbox_timer * luasandbox_timer_create_one(
 		php_luasandbox_obj * sandbox, int type);
 static luasandbox_timer * luasandbox_timer_alloc();
+static luasandbox_timer * luasandbox_timer_lookup(int id);
 static void luasandbox_timer_free(luasandbox_timer *lt);
 static void luasandbox_timer_timeout_hook(lua_State *L, lua_Debug *ar);
 static void luasandbox_timer_profiler_hook(lua_State *L, lua_Debug *ar);
@@ -114,10 +125,12 @@ static inline void luasandbox_timer_add(
 // separate function and call that from the signal handler instead.
 static void luasandbox_timer_handle_event(union sigval sv)
 {
-	luasandbox_timer * lt = (luasandbox_timer*)sv.sival_ptr;
+	luasandbox_timer * lt;
 
 	while (1) {
-		if (!lt->sandbox) { // lt is invalid
+		lt = luasandbox_timer_lookup(sv.sival_int);
+
+		if (!lt || !lt->sandbox) { // lt is invalid
 			return;
 		}
 
@@ -299,6 +312,45 @@ static void luasandbox_timer_profiler_hook(lua_State *L, lua_Debug *ar)
 	lts->total_count += signal_count;
 }
 
+void luasandbox_timer_minit(TSRMLS_D)
+{
+	timer_hash = NULL;
+	timer_hash_entries = 0;
+	timer_hash_size = 0;
+
+	if (pthread_rwlock_init(&timer_hash_rwlock, NULL) != 0) {
+		php_error_docref(NULL TSRMLS_CC, E_ERROR,
+				"Unable to allocate timer rwlock: %s", strerror(errno));
+	}
+}
+
+void luasandbox_timer_mshutdown(TSRMLS_D)
+{
+	int status;
+	size_t i;
+
+	status = pthread_rwlock_wrlock(&timer_hash_rwlock);
+	if (status != 0) {
+		// Some other error
+		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+				"Unable to acquire timer rwlock for writing, leaking timers: %s", strerror(errno));
+		return;
+	}
+
+	if (timer_hash) {
+		for (i = 0; i < timer_hash_size; i++) {
+			if (timer_hash[i]) {
+				pefree(timer_hash[i], 1);
+			}
+		}
+		pefree(timer_hash, 1);
+	}
+
+	// Ideally when this is called no other threads are trying to use the mutex...
+	pthread_rwlock_unlock(&timer_hash_rwlock);
+	pthread_rwlock_destroy(&timer_hash_rwlock);
+}
+
 int luasandbox_timer_enable_profiler(luasandbox_timer_set * lts, struct timespec * period)
 {
 	if (lts->profiler_running) {
@@ -412,7 +464,7 @@ static luasandbox_timer * luasandbox_timer_create_one(
 	ev.sigev_notify_function = luasandbox_timer_handle_event;
 	lt->type = type;
 	lt->sandbox = sandbox;
-	ev.sigev_value.sival_ptr = (void*)lt;
+	ev.sigev_value.sival_int = lt->id;
 
 	if (pthread_getcpuclockid(pthread_self(), &lt->clock_id) != 0) {
 		TSRMLS_FETCH();
@@ -537,32 +589,142 @@ static void luasandbox_timer_stop_one(luasandbox_timer * lt, struct timespec * r
 	luasandbox_timer_free(lt);
 }
 
+static inline int hash_for_id(int id)
+{
+	return id * 131071;
+}
+
+// Don't call this directly, use luasandbox_timer_alloc()
+static void timer_hash_insert(luasandbox_timer *lt)
+{
+	off_t i;
+
+	for (i = hash_for_id(lt->id) % timer_hash_size; timer_hash[i]; i = (i + 1) % timer_hash_size);
+	timer_hash[i] = lt;
+}
+
 static luasandbox_timer * luasandbox_timer_alloc()
 {
-	int start, cur;
-	luasandbox_timer *timers;
-	TSRMLS_FETCH();
-	start = cur = LUASANDBOX_G(timer_idx) % LUASANDBOX_MAX_TIMERS;
-	timers = LUASANDBOX_G(timers);
-	while (1) {
-		if (!timers[cur].sandbox) {
-			break;
+	int status;
+	size_t old_hash_size;
+	off_t i;
+	luasandbox_timer *lt;
+	luasandbox_timer **old_hash;
+
+	status = pthread_rwlock_wrlock(&timer_hash_rwlock);
+	if (status != SUCCESS) {
+		// Some other error
+		TSRMLS_FETCH();
+		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+				"Unable to acquire timer rwlock for writing: %s", strerror(errno));
+		return NULL;
+	}
+
+	// Allocate the timer and set its id
+	lt = (luasandbox_timer*)pecalloc(1, sizeof(*lt), 1);
+	lt->id = timer_next_id;
+	if (++timer_next_id < 0) {
+		timer_next_id = 1;
+	}
+
+	// Is it time to increase the hash table size?
+	timer_hash_entries++;
+	if (timer_hash_entries >= timer_hash_size * TIMER_HASH_LOAD_FACTOR) {
+		old_hash = timer_hash;
+		old_hash_size = timer_hash_size;
+		if (timer_hash_size == 0) {
+			timer_hash_size = 10;
+		} else {
+			timer_hash_size = timer_hash_size * 2;
 		}
-		cur = (cur + 1) % LUASANDBOX_MAX_TIMERS;
-		if (cur == start) {
-			TSRMLS_FETCH();
-			php_error_docref(NULL TSRMLS_CC, E_WARNING,
-				"Unable to allocate timer: %s", strerror(errno));
-			return NULL;
+		timer_hash = (luasandbox_timer**)pecalloc(timer_hash_size, sizeof(*timer_hash), 1);
+		for (i = 0; i < old_hash_size; i++) {
+			if (old_hash[i]) {
+				timer_hash_insert(old_hash[i]);
+			}
 		}
 	}
-	LUASANDBOX_G(timer_idx) = cur;
-	return &timers[cur];
+
+	// Insert the new timer into the hash table
+	timer_hash_insert(lt);
+
+	pthread_rwlock_unlock(&timer_hash_rwlock);
+	return lt;
+}
+
+static luasandbox_timer *luasandbox_timer_lookup(int id)
+{
+	off_t i;
+	int status;
+
+	if ( id <= 0 ) {
+		return NULL;
+	}
+
+	status = pthread_rwlock_rdlock(&timer_hash_rwlock);
+	if (status != SUCCESS) {
+		// Some other error
+		TSRMLS_FETCH();
+		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+				"Unable to acquire timer rwlock for reading: %s", strerror(errno));
+		return NULL;
+	}
+
+	for (i = hash_for_id(id) % timer_hash_size; timer_hash[i]; i = (i + 1) % timer_hash_size) {
+		if (timer_hash[i]->id == id) {
+			pthread_rwlock_unlock(&timer_hash_rwlock);
+			return timer_hash[i];
+		}
+	}
+
+	pthread_rwlock_unlock(&timer_hash_rwlock);
+	return NULL;
 }
 
 static void luasandbox_timer_free(luasandbox_timer *lt)
 {
-	lt->sandbox = NULL;
+	int id;
+	off_t cur, remove = -1, wanted;
+	int status;
+
+	id = lt->id;
+	lt->id = 0;
+
+	status = pthread_rwlock_wrlock(&timer_hash_rwlock);
+	if (status != SUCCESS) {
+		// Some other error
+		TSRMLS_FETCH();
+		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+				"Unable to acquire timer semaphore: %s", strerror(errno));
+		return;
+	}
+
+	// Find the location of this timer in the hash, then move any applicable
+	// timers after it over it.
+	for (cur = hash_for_id(id) % timer_hash_size; timer_hash[cur]; cur = (cur + 1) % timer_hash_size) {
+		if (timer_hash[cur] == lt) {
+			// Found it! Start moving subsequent items in the cluster
+			remove = cur;
+		} else if (remove >= 0) {
+			// Moving! The plan is to end the current cluster at 'remove', so
+			// if the current element should live at or before 'remove'
+			// (keeping wraparound in mind) move it there and remove this one
+			// instead.
+			wanted = hash_for_id(timer_hash[cur]->id) % timer_hash_size;
+			if ( (remove <= cur) ? (wanted <= remove || wanted > cur) : (wanted <= remove && wanted > cur) ) {
+				timer_hash[remove] = timer_hash[cur];
+				remove = cur;
+			}
+		}
+	}
+	if (remove >= 0) {
+		timer_hash[remove] = NULL;
+		timer_hash_entries--;
+	}
+
+	pefree(lt, 1);
+
+	pthread_rwlock_unlock(&timer_hash_rwlock);
 }
 
 void luasandbox_timer_get_usage(luasandbox_timer_set * lts, struct timespec * ts)

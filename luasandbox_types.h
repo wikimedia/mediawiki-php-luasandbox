@@ -4,8 +4,6 @@
 #include <semaphore.h>
 #include "php.h"
 
-#define LUASANDBOX_MAX_TIMERS 20
-
 #ifdef CLOCK_REALTIME
 
 struct _php_luasandbox_obj;
@@ -16,6 +14,7 @@ typedef struct _luasandbox_timer {
 	clockid_t clock_id;
 	int type;
 	sem_t semaphore;
+	int id;
 } luasandbox_timer;
 
 typedef struct {
@@ -61,13 +60,6 @@ typedef struct {
 
 ZEND_BEGIN_MODULE_GLOBALS(luasandbox)
 	HashTable * allowed_globals;
-
-#ifdef CLOCK_REALTIME
-	/* We need a global array of timers, because SIGEV_THREAD may still fire
-	 * the timer well after timer_delete is called. Thanks, POSIX. */
-	int timer_idx;
-	luasandbox_timer timers[LUASANDBOX_MAX_TIMERS];
-#endif
 	long active_count;
 ZEND_END_MODULE_GLOBALS(luasandbox)
 

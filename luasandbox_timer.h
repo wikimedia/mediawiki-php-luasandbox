@@ -17,8 +17,9 @@
 
 #endif /*CLOCK_REALTIME*/
 
-void luasandbox_timer_install_handler(struct sigaction * oldact);
-void luasandbox_timer_remove_handler(struct sigaction * oldact);
+void luasandbox_timer_minit(TSRMLS_D);
+void luasandbox_timer_mshutdown(TSRMLS_D);
+
 void luasandbox_timer_create(luasandbox_timer_set * lts, struct _php_luasandbox_obj * sandbox);
 void luasandbox_timer_set_limit(luasandbox_timer_set * lts,
 		struct timespec * timeout);
