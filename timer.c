@@ -12,6 +12,10 @@
 #include "php_luasandbox.h"
 #include "luasandbox_timer.h"
 
+#ifndef LUASANDBOX_NO_CLOCK
+#include <pthread.h>
+#endif
+
 char luasandbox_timeout_message[] = "The maximum execution time for this script was exceeded";
 
 #ifdef LUASANDBOX_NO_CLOCK
