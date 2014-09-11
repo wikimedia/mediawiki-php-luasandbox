@@ -458,7 +458,11 @@ static void luasandbox_timer_set_periodic(luasandbox_timer * lt, struct timespec
 	struct itimerspec its;
 	its.it_interval = *period;
 	its.it_value = *period;
-	timer_settime(lt->timer, 0, &its, NULL);
+	if (timer_settime(lt->timer, 0, &its, NULL) != SUCCESS) {
+		TSRMLS_FETCH();
+		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+			"timer_settime(): %s", strerror(errno));
+	}
 }
 
 void luasandbox_timer_stop(luasandbox_timer_set * lts)
@@ -502,16 +506,34 @@ static void luasandbox_timer_stop_one(luasandbox_timer * lt, struct timespec * r
 
 	its.it_value = zero;
 	its.it_interval = zero;
-	timer_settime(lt->timer, 0, &its, NULL);
+	if (timer_settime(lt->timer, 0, &its, NULL) != SUCCESS) {
+		TSRMLS_FETCH();
+		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+			"timer_settime(): %s", strerror(errno));
+	}
 
 	// Invalidate the callback structure, delete the timer
 	lt->sandbox = NULL;
 	// If the timer event handler is running, wait for it to finish
 	// before returning to the caller, otherwise the timer event handler
 	// may find itself with a dangling pointer in its local scope.
-	while (sem_wait(&lt->semaphore) && errno == EINTR);
-	sem_destroy(&lt->semaphore);
-	timer_delete(lt->timer);
+	while (1) {
+		if (sem_wait(&lt->semaphore) == SUCCESS) {
+			sem_destroy(&lt->semaphore);
+			break;
+		}
+		if (errno != EINTR) {
+			TSRMLS_FETCH();
+			php_error_docref(NULL TSRMLS_CC, E_WARNING,
+				"sem_wait(): %s", strerror(errno));
+			break;
+		}
+	}
+	if (timer_delete(lt->timer) != SUCCESS) {
+		TSRMLS_FETCH();
+		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+			"timer_delete(): %s", strerror(errno));
+	}
 	luasandbox_timer_free(lt);
 }
 
