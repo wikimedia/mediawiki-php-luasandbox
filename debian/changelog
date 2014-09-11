@@ -1,3 +1,9 @@
+php-luasandbox (2.0-6) UNRELEASED; urgency=medium
+
+  * Fix timer handling under HHVM 
+
+ -- Giuseppe Lavagetto <glavagetto@wikimedia.org>  Thu, 11 Sep 2014 10:29:34 +0200
+
 php-luasandbox (2.0-5) trusty-wikimeda; urgency=medium
 
   * Fix a memory leak under HHVM
