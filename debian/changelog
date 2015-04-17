@@ -1,3 +1,10 @@
+php-luasandbox (2.0.8) trusty-wikimedia; urgency=medium
+
+  * Debian native package versioning
+  * Version bump for HHVM 3.6 
+
+ -- Giuseppe Lavagetto <glavagetto@wikimedia.org>  Fri, 17 Apr 2015 11:14:14 +0200
+
 php-luasandbox (2.0-7) trusty-wikimedia; urgency=medium
 
   * Small improvement to error handling
