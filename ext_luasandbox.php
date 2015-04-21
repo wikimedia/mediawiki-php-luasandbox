@@ -29,7 +29,7 @@
 <<__NativeData("ZendCompat")>> class LuaSandboxEmergencyTimeoutError extends LuaSandboxError {}
 
 <<__NativeData("ZendCompat")>> class LuaSandboxFunction {
-	<<__Native("ZendCompat")>> private final function __construct(): mixed;
+	<<__Native("ZendCompat")>> private final function __construct();
 	<<__Native("ZendCompat")>> function call(): mixed;
 	<<__Native("ZendCompat")>> function dump(): mixed;
 }
