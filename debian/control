@@ -4,7 +4,9 @@ Priority: optional
 Maintainer: Tim Starling <tstarling@wikimedia.org>
 Build-Depends: debhelper (>= 9), liblua5.1-0-dev, pkg-config,
   php5-dev,
-  hhvm-dev, cmake
+  hhvm-dev, cmake,
+  libboost-dev, libgoogle-glog-dev, libdouble-conversion-dev,
+  libjemalloc-dev, libtbb-dev
 Standards-Version: 3.9.5
 Homepage: https://www.mediawiki.org/wiki/Extension:Scribunto
 
