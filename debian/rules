@@ -1,15 +1,34 @@
 #!/usr/bin/make -f
 
+HHVM=$(shell test -f /usr/bin/hphpize && echo "HHVM")
+
+ifeq ($(HHVM), HHVM)
+	configure_targets = php_configure hhvm_configure
+	build_targets = php_build hhvm_build
+	install_targets = php_install hhvm_install
+	gencontrol_targets =  php_gencontrol hhvm_gencontrol
+else
+	configure_targets = php_configure
+	build_targets = php_build
+	install_targets = php_install
+	gencontrol_targets =  php_gencontrol hhvm_gencontrol
+endif
+
 %:
 	dh $@
 
-override_dh_auto_configure:
-	mkdir -p debian/build-php debian/build-hhvm
+override_dh_auto_configure: $(configure_targets)
+
+php_configure:
+	mkdir -p debian/build-php
 	## PHP
 	tar -cf - --exclude=debian/build* --exclude=.pc . \
 		| tar -xf - -C debian/build-php
 	cd debian/build-php && /usr/bin/phpize && dh_auto_configure
+
+hhvm_configure:
 	## HHVM
+	mkdir -p debian/build-hhvm
 	tar -cf - --exclude=debian/build* --exclude=.pc . \
 		| tar -xf - -C debian/build-hhvm
 	cd debian/build-hhvm && /usr/bin/hphpize
@@ -22,24 +41,36 @@ override_dh_auto_configure:
 		-DLUA_USE_CPP=1
 	cd debian/build-hhvm && dh_auto_configure
 
-override_dh_auto_build:
+override_dh_auto_build: $(build_targets)
+
+php_build:
 	cd debian/build-php  && dh_auto_build
+
+hhvm_build:
 	cd debian/build-hhvm && dh_auto_build
 
 override_dh_auto_test:
 
-override_dh_auto_install:
+override_dh_auto_install: $(install_targets)
+
+php_install:
 	INSTALL_ROOT=$(CURDIR)/debian/php-luasandbox make -C debian/build-php install
+
+hhvm_install:
 	DESTDIR=$(CURDIR)/debian/hhvm-luasandbox make -C debian/build-hhvm install
 
-override_dh_gencontrol:
-	echo "php:Depends=phpapi-$(shell php-config5 --phpapi)" >> debian/php-luasandbox.substvars
-	# HHVM does *not* ensure binary compatibility
-	echo "hhvm:ApiVersion=hhvm-api-$(shell /usr/bin/hhvm --version | sed -ne 's/^Extension API:\ //p')" >> debian/hhvm-luasandbox.substvars
+override_dh_gencontrol: $(gencontrol_targets)
 	dh_gencontrol
 
+php_gencontrol:
+	echo "php:Depends=phpapi-$(shell php-config5 --phpapi)" >> debian/php-luasandbox.substvars
+
+hhvm_gencontrol:
+	# HHVM does *not* ensure binary compatibility
+	echo "hhvm:ApiVersion=hhvm-api-$(shell /usr/bin/hhvm --version | sed -ne 's/^Extension API:\ //p')" >> debian/hhvm-luasandbox.substvars
+
 override_dh_auto_clean:
-	-rm -r debian/build*
+	rm -rf debian/build*
 	dh_auto_clean
 
 .PHONY: override_dh_auto_configure override_dh_auto_build override_dh_auto_test override_dh_auto_install override_dh_gencontrol
