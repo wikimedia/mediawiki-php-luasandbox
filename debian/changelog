@@ -1,3 +1,10 @@
+php-luasandbox (2.0.9) trusty-wikimedia; urgency=low
+
+  * Rebuilt with HHVM autodetection. Will now build correctly both on HHVM
+    enabled distros and not HHVM enabled ones.
+
+ -- Alexandros Kosiaris <alex@wikimedia.org>  Thu, 21 May 2015 09:52:56 +0300
+
 php-luasandbox (2.0.8) trusty-wikimedia; urgency=medium
 
   * Debian native package versioning
