@@ -1,3 +1,9 @@
+php-luasandbox (2.0.10) trusty-wikimedia; urgency=medium
+
+  * Added hhvm as a dependency for HHVM enabled system
+
+ -- Giuseppe Lavagetto <glavagetto@wikimedia.org>  Fri, 22 May 2015 17:43:05 +0200
+
 php-luasandbox (2.0.9) trusty-wikimedia; urgency=low
 
   * Rebuilt with HHVM autodetection. Will now build correctly both on HHVM
@@ -8,20 +14,20 @@ php-luasandbox (2.0.9) trusty-wikimedia; urgency=low
 php-luasandbox (2.0.8) trusty-wikimedia; urgency=medium
 
   * Debian native package versioning
-  * Version bump for HHVM 3.6 
+  * Version bump for HHVM 3.6
 
  -- Giuseppe Lavagetto <glavagetto@wikimedia.org>  Fri, 17 Apr 2015 11:14:14 +0200
 
 php-luasandbox (2.0-7) trusty-wikimedia; urgency=medium
 
   * Small improvement to error handling
-  * Correct links to the ini file 
+  * Correct links to the ini file
 
  -- Giuseppe Lavagetto <glavagetto@wikimedia.org>  Mon, 16 Feb 2015 12:05:05 +0100
 
 php-luasandbox (2.0-6) trusty-wikimedia; urgency=medium
 
-  * Fix timer handling under HHVM 
+  * Fix timer handling under HHVM
 
  -- Giuseppe Lavagetto <glavagetto@wikimedia.org>  Thu, 11 Sep 2014 10:29:34 +0200
 
@@ -33,7 +39,7 @@ php-luasandbox (2.0-5) trusty-wikimeda; urgency=medium
 
 php-luasandbox (2.0-4) trusty-wikimeda; urgency=medium
 
-  * Make the package depend on hhvm version, new build for hhvm 
+  * Make the package depend on hhvm version, new build for hhvm
 
  -- Giuseppe Lavagetto <glavagetto@wikimedia.org>  Mon, 28 Jul 2014 18:09:48 +0200
 
@@ -115,7 +121,7 @@ php-luasandbox (1.2-1) precise-wikimedia; urgency=low
   * Add wrapPhpFunction
   * Fix Mac OS X compilation
   * Fix compilation against LuaJIT
-  * Support metatable override of pairs() and ipairs(), like Lua 5.2 
+  * Support metatable override of pairs() and ipairs(), like Lua 5.2
 
  -- Tim Starling <tstarling@wikimedia.org>  Wed, 20 Feb 2013 14:54:44 +1100
 
