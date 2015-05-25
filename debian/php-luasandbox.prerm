@@ -5,7 +5,7 @@ set -e
 #EXTRA#
 
 if [ "$1" = "remove" ] || [ "$1" = "deconfigure" ]; then
-   php5dismod -s ALL luasandbox
+   [ -x /usr/sbin/php5enmod ] && php5dismod -s ALL luasandbox
 fi;
 
 #DEBHELPER#
