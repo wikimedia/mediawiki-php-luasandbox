@@ -1,6 +1,7 @@
 php-luasandbox (2.0.10) trusty-wikimedia; urgency=medium
 
   * Added hhvm as a dependency for HHVM enabled system
+  * Added a guard against phpenmod/dismod
 
  -- Giuseppe Lavagetto <glavagetto@wikimedia.org>  Fri, 22 May 2015 17:43:05 +0200
 
