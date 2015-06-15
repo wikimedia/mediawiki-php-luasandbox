@@ -1,3 +1,9 @@
+php-luasandbox (2.0.11) trusty-wikimedia; urgency=medium
+
+  * Dynamically allocate luasandbox_timer instances
+
+ -- Alexandros Kosiaris <akosiaris@wikimedia.org>  Mon, 15 Jun 2015 22:34:56 +0300
+
 php-luasandbox (2.0.10) trusty-wikimedia; urgency=medium
 
   * Added hhvm as a dependency for HHVM enabled system
