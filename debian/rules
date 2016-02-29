@@ -57,7 +57,7 @@ php_install:
 	INSTALL_ROOT=$(CURDIR)/debian/php-luasandbox make -C debian/build-php install
 
 hhvm_install:
-	DESTDIR=$(CURDIR)/debian/hhvm-luasandbox make -C debian/build-hhvm install
+	DESTDIR=$(CURDIR)/debian/hhvm-luasandbox sudo make -C debian/build-hhvm install
 
 override_dh_gencontrol: $(gencontrol_targets)
 	dh_gencontrol
