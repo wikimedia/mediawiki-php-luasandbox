@@ -1,3 +1,9 @@
+php-luasandbox (2.0.12) trusty-wikimedia; urgency=medium
+
+  * Adapting debian/rules to the newer HHVM package
+
+ -- Giuseppe Lavagetto <glavagetto@wikimedia.org>  Tue, 01 Mar 2016 13:30:04 +0100
+
 php-luasandbox (2.0.11) trusty-wikimedia; urgency=medium
 
   * Dynamically allocate luasandbox_timer instances

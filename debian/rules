@@ -67,7 +67,8 @@ php_gencontrol:
 
 hhvm_gencontrol:
 	# HHVM does *not* ensure binary compatibility
-	echo "hhvm:ApiVersion=hhvm-api-$(shell /usr/bin/hhvm --version | sed -ne 's/^Extension API:\ //p')" >> debian/hhvm-luasandbox.substvars
+	hhvmapi=$(shell /usr/bin/hhvm --version | sed -ne 's/^HipHop VM \(.*\)\..*/\1/p') && \
+		[ -n "$${hhvmapi}" ] && echo "hhvm:ApiVersion=hhvm-api-$${hhvmapi}" >> debian/hhvm-luasandbox.substvars
 
 override_dh_auto_clean:
 	rm -rf debian/build*
