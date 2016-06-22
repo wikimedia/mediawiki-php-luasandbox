@@ -2,5 +2,5 @@
 host=gerrit.wikimedia.org
 port=29418
 project=mediawiki/php/luasandbox
-defaultbranch=master
+defaultbranch=debian
 defaultrebase=0
