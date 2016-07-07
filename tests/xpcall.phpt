@@ -57,7 +57,7 @@ $tests = array(
 	'Infinite loop in handler' => array(
 		'error("x")',
 		'while true do end',
-	),		
+	),
 	'Out of memory in handler' => array(
 		'error("x")',
 		'string.rep("x", 1000000)'
@@ -80,14 +80,18 @@ foreach ( $tests as $desc => $info ) {
 	$errorCode = "return function(msg) $errorCode end";
 	$ret = $sandbox->loadString( $errorCode )->call();
 	$errorFunc = $ret[0];
-	
+
 	try {
-		print implode("\n", 
+		print implode("\n",
 			$sandbox->callFunction( 'xpcall_test', $func, $errorFunc ) ) . "\n";
 	} catch ( LuaSandboxError $e ) {
 		echo "LuaSandboxError: " . $e->getMessage() . "\n";
 	}
 }
+
+// HHVM leaks it otherwise, and the warning makes the test fail
+unset( $sandbox, $func, $e, $ret, $errorFunc );
+
 --EXPECT--
 Normal: success
 User error: xp: [string ""]:1: runtime error

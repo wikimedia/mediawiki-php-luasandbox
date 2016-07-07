@@ -22,7 +22,6 @@ $tests = array(
 	'Infinite loop (timeout)' => 'while true do end',
 	'Out of memory' => 'string.rep("x", 1000000)'
 );
-		
 
 foreach ( $tests as $desc => $code ) {
 	echo "$desc: ";
@@ -31,12 +30,16 @@ foreach ( $tests as $desc => $code ) {
 	$sandbox->setCPULimit( 0.25 );
 	$sandbox->setMemoryLimit( 100000 );
 	try {
-		print implode("\n", 
+		print implode("\n",
 			$sandbox->callFunction( 'pcall_test', $sandbox->loadString( $code ) ) ) . "\n";
 	} catch ( LuaSandboxError $e ) {
 		echo "LuaSandboxError: " . $e->getMessage() . "\n";
 	}
 }
+
+// HHVM leaks it otherwise, and the warning makes the test fail
+unset( $sandbox, $e );
+
 --EXPECT--
 Normal: success
 User error: Caught: [string ""]:1: runtime error

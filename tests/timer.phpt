@@ -135,6 +135,9 @@ doTest( 'paused-PHP to paused-PHP counted', 'php.pauseCall', 'php.paused' );
 doTest( 'paused-PHP to paused-PHP to paused-PHP counted', 'php.pauseCall', 'php.pauseCall', 'php.paused' );
 doTest( 'paused-PHP to PHP to paused-PHP counted', 'php.pauseCall', 'php.call', 'php.paused' );
 
+// HHVM leaks it otherwise, and the warning makes the test fail
+unset( $sandbox );
+
 --EXPECTF--
 Lua usage counted:                              yes (0.1s of %fs)
 PHP usage counted:                              yes (0.2s of %fs)

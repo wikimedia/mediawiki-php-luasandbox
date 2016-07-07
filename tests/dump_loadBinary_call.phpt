@@ -8,6 +8,10 @@ var_dump( $f = $sandbox->loadString( 'return 1' ) );
 $dump = $f->dump();
 var_dump( $restore = $sandbox->loadBinary( $dump ) );
 var_dump( $restore->call() );
+
+// HHVM leaks it otherwise, and the warning makes the test fail
+unset( $sandbox, $f, $restore );
+
 --EXPECT--
 object(LuaSandbox)#1 (0) {
 }

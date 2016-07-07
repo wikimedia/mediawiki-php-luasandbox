@@ -14,5 +14,9 @@ try {
 } catch ( Exception $e ) {
 	print $e->getMessage();
 }
+
+// HHVM leaks it otherwise, and the warning makes the test fail
+unset( $sandbox, $f );
+
 --EXPECT--
 message
