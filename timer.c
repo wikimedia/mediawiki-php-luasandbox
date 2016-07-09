@@ -32,7 +32,9 @@ void luasandbox_timer_set_limit(luasandbox_timer_set * lts,
 int luasandbox_timer_enable_profiler(luasandbox_timer_set * lts, struct timespec * period) {
 	return 0;
 }
-int luasandbox_timer_start(luasandbox_timer_set * lts) {}
+int luasandbox_timer_start(luasandbox_timer_set * lts) {
+	return 0;
+}
 void luasandbox_timer_stop(luasandbox_timer_set * lts) {}
 void luasandbox_timer_destroy(luasandbox_timer_set * lts) {}
 
@@ -360,6 +362,7 @@ int luasandbox_timer_enable_profiler(luasandbox_timer_set * lts, struct timespec
 	lts->profiler_period = *period;
 	if (lts->function_counts) {
 		zend_hash_destroy(lts->function_counts);
+		FREE_HASHTABLE(lts->function_counts);
 		lts->function_counts = NULL;
 	}
 	lts->total_count = 0;
@@ -822,6 +825,7 @@ void luasandbox_timer_destroy(luasandbox_timer_set * lts)
 	}
 	if (lts->function_counts) {
 		zend_hash_destroy(lts->function_counts);
+		FREE_HASHTABLE(lts->function_counts);
 		lts->function_counts = NULL;
 	}
 }
