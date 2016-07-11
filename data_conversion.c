@@ -35,7 +35,7 @@ extern zend_class_entry *luasandboxfunction_ce;
 extern zend_class_entry *luasandboxruntimeerror_ce;
 
 /**
- * An int, the address of which is used as a fatal error marker. The value is 
+ * An int, the address of which is used as a fatal error marker. The value is
  * not used.
  */
 int luasandbox_fatal_error_marker = 0;
@@ -87,19 +87,19 @@ int luasandbox_push_zval(lua_State * L, zval * z)
 		case IS_OBJECT: {
 			TSRMLS_FETCH();
 			zend_class_entry * objce;
-			
+
 			objce = Z_OBJCE_P(z);
 			if (instanceof_function(objce, luasandboxfunction_ce TSRMLS_CC)) {
 				php_luasandboxfunction_obj * func_obj;
-				
+
 				func_obj = (php_luasandboxfunction_obj *)zend_object_store_get_object(z TSRMLS_CC);
-				
+
 				lua_getfield(L, LUA_REGISTRYINDEX, "php_luasandbox_chunks");
 				lua_rawgeti(L, -1, func_obj->index);
 				lua_remove(L, -2);
 				break;
 			}
-		
+
 			if (!luasandbox_push_hashtable(L, Z_OBJPROP_P(z))) {
 				return 0;
 			}
@@ -139,8 +139,8 @@ static int luasandbox_free_zval_userdata(lua_State * L)
 
 /** {{{ luasandbox_push_zval_userdata
  *
- * Push a full userdata on to the stack, which stores a zval* in its block. 
- * Increment its reference count and set its metatable so that it will be freed 
+ * Push a full userdata on to the stack, which stores a zval* in its block.
+ * Increment its reference count and set its metatable so that it will be freed
  * at the appropriate time.
  */
 void luasandbox_push_zval_userdata(lua_State * L, zval * z)
@@ -157,14 +157,14 @@ void luasandbox_push_zval_userdata(lua_State * L, zval * z)
 
 /** {{{ luasandbox_push_hashtable
  *
- * Helper function for luasandbox_push_zval. Create a new table on the top of 
- * the stack and add the zvals in the HashTable to it. 
+ * Helper function for luasandbox_push_zval. Create a new table on the top of
+ * the stack and add the zvals in the HashTable to it.
  */
 static int luasandbox_push_hashtable(lua_State * L, HashTable * ht)
 {
 	HashPosition p;
 
-	// Recursion requires an arbitrary amount of stack space so we have to 
+	// Recursion requires an arbitrary amount of stack space so we have to
 	// check the stack.
 	luaL_checkstack(L, 10, "converting PHP array to Lua");
 
@@ -223,8 +223,8 @@ static int luasandbox_push_hashtable(lua_State * L, HashTable * ht)
  * @param index The stack index to the input value
  * @param sandbox_zval A zval poiting to a valid LuaSandbox object which will be
  *     used for the parent object of any LuaSandboxFunction objects created.
- * @param recursionGuard A hashtable for keeping track of tables that have been 
- *     processed, to allow infinite recursion to be avoided. External callers 
+ * @param recursionGuard A hashtable for keeping track of tables that have been
+ *     processed, to allow infinite recursion to be avoided. External callers
  *     should set this to NULL.
  * @return int 0 (and a PHP exception) on failure
  */
@@ -252,7 +252,7 @@ int luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 					|| labs(i) < (1L << DBL_MANT_DIG))
 				{
 					ZVAL_LONG(z, i);
-				} else {				
+				} else {
 					ZVAL_DOUBLE(z, d);
 				}
 			} else {
@@ -335,7 +335,7 @@ int luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 			if (index < 0) {
 				index += lua_gettop(L) + 1;
 			}
-			
+
 			// Get the chunks table
 			lua_getfield(L, LUA_REGISTRYINDEX, "php_luasandbox_chunks");
 
@@ -543,7 +543,7 @@ static int luasandbox_lua_pair_to_array(HashTable *ht, lua_State *L,
 
 /** {{{ luasandbox_wrap_fatal
  *
- * Pop a value off the top of the stack, and push a fatal error wrapper 
+ * Pop a value off the top of the stack, and push a fatal error wrapper
  * containing the value.
  */
 void luasandbox_wrap_fatal(lua_State * L)
@@ -552,7 +552,7 @@ void luasandbox_wrap_fatal(lua_State * L)
 	lua_createtable(L, 0, 2);
 	lua_pushlightuserdata(L, &luasandbox_fatal_error_marker);
 	lua_rawseti(L, -2, 1);
-	
+
 	// Swap the table with the input value, so that the value is on the top,
 	// then put the value in the table as element 2
 	lua_insert(L, -2);
@@ -562,7 +562,7 @@ void luasandbox_wrap_fatal(lua_State * L)
 
 /** {{{ luasandbox_is_fatal
  *
- * Check if the value at the given stack index is a fatal error wrapper 
+ * Check if the value at the given stack index is a fatal error wrapper
  * created by luasandbox_wrap_fatal(). Return 1 if it is, 0 otherwise.
  */
 int luasandbox_is_fatal(lua_State * L, int index)
@@ -598,13 +598,13 @@ static int luasandbox_has_error_marker(lua_State * L, int index, void * marker)
 
 /** {{{
  *
- * If the value at the given stack index is a fatal error wrapper, convert 
- * the error object it wraps to a string. If the value is anything else, 
+ * If the value at the given stack index is a fatal error wrapper, convert
+ * the error object it wraps to a string. If the value is anything else,
  * convert it directly to a string. If the error object is not convertible
  * to a string, return "unknown error".
  *
- * This calls lua_tolstring() and will corrupt the value on the stack as 
- * described in that function's documentation. The string is valid until the 
+ * This calls lua_tolstring() and will corrupt the value on the stack as
+ * described in that function's documentation. The string is valid until the
  * Lua value is destroyed.
  */
 const char * luasandbox_error_to_string(lua_State * L, int index)
@@ -644,7 +644,7 @@ int luasandbox_attach_trace(lua_State * L)
 	lua_createtable(L, 0, 3);
 	lua_pushlightuserdata(L, &luasandbox_trace_error_marker);
 	lua_rawseti(L, -2, 1);
-	
+
 	// Swap the table with the input value, so that the value is on the top,
 	// then put the value in the table as element 2
 	lua_insert(L, -2);
@@ -653,7 +653,7 @@ int luasandbox_attach_trace(lua_State * L)
 	// Put the backtrace in element 3
 	luasandbox_push_structured_trace(L, 1);
 	lua_rawseti(L, -2, 3);
-	
+
 	return 1;
 }
 /* }}} */

@@ -78,11 +78,11 @@ php_luasandbox_obj * luasandbox_get_php_obj(lua_State * L);
 /** {{{ luasandbox_enter_php
  *
  * This function must be called each time a C function is entered from Lua
- * and the PHP state needs to be accessed in any way. Before exiting the 
+ * and the PHP state needs to be accessed in any way. Before exiting the
  * function, luasandbox_leave_php() must be called.
  *
- * This sets a flag which indicates to the timeout signal handler that it is 
- * unsafe to call longjmp() to return control to PHP. If the flag is not 
+ * This sets a flag which indicates to the timeout signal handler that it is
+ * unsafe to call longjmp() to return control to PHP. If the flag is not
  * correctly set, memory may be corrupted and security compromised.
  */
 static inline void luasandbox_enter_php(lua_State * L, php_luasandbox_obj * intern)
@@ -107,7 +107,7 @@ static inline void luasandbox_enter_php_ignore_timeouts(lua_State * L, php_luasa
 
 /** {{{ luasandbox_leave_php
  *
- * This function must be called after luasandbox_enter_php, before the callback 
+ * This function must be called after luasandbox_enter_php, before the callback
  * from Lua returns.
  */
 static inline void luasandbox_leave_php(lua_State * L, php_luasandbox_obj * intern)

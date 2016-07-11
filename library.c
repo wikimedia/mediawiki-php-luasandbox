@@ -1,6 +1,6 @@
 /**
- * This file holds the library of functions which are written in C and exposed 
- * to Lua code, and the code which manages registration of both the custom 
+ * This file holds the library of functions which are written in C and exposed
+ * to Lua code, and the code which manages registration of both the custom
  * library and the parts of the standard Lua library which we allow.
  */
 
@@ -37,14 +37,14 @@ static int luasandbox_base_ipairs(lua_State *L);
 /**
  * Allowed global variables. Omissions are:
  *   * pcall, xpcall: We have our own versions which don't allow interception of
- *     timeout etc. errors. 
+ *     timeout etc. errors.
  *   * loadfile: insecure.
- *   * load, loadstring: Probably creates a protected environment so has 
- *     the same problem as pcall. Also omitting these makes analysis of the 
+ *   * load, loadstring: Probably creates a protected environment so has
+ *     the same problem as pcall. Also omitting these makes analysis of the
  *     code for runtime etc. feasible.
  *   * print: Not compatible with a sandbox environment
- *   * tostring: Provides addresses of tables and functions, which provides an 
- *     easy ASLR workaround or heap address discovery mechanism for a memory 
+ *   * tostring: Provides addresses of tables and functions, which provides an
+ *     easy ASLR workaround or heap address discovery mechanism for a memory
  *     corruption exploit. We have our own version.
  *   * Any new or undocumented functions like newproxy.
  *   * package: cpath, loadlib etc. are insecure.
@@ -128,7 +128,7 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 	luasandbox_lib_filter_table(L, luasandbox_allowed_debug_members);
 	lua_setglobal(L, "debug");
 
-	// Remove any globals that aren't in a whitelist. This is mostly to remove 
+	// Remove any globals that aren't in a whitelist. This is mostly to remove
 	// unsafe functions from the base library.
 	lua_pushnil(L);
 	while (lua_next(L, LUA_GLOBALSINDEX) != 0) {
@@ -140,8 +140,8 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 			continue;
 		}
 		key = lua_tolstring(L, -1, &key_len);
-		if (zend_hash_find(luasandbox_lib_get_allowed_globals(TSRMLS_C), 
-			(char*)key, key_len + 1, &data) == FAILURE) 
+		if (zend_hash_find(luasandbox_lib_get_allowed_globals(TSRMLS_C),
+			(char*)key, key_len + 1, &data) == FAILURE)
 		{
 			// Not allowed, delete it
 			lua_pushnil(L);
@@ -193,7 +193,7 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 /* }}} */
 
 /** {{{ luasandbox_lib_filter_table
- * 
+ *
  * Make a copy of the table at the top of the stack, and remove any members
  * from it that aren't in the given whitelist.
  */
@@ -238,7 +238,7 @@ static HashTable * luasandbox_lib_get_allowed_globals(TSRMLS_D)
 	ALLOC_HASHTABLE(LUASANDBOX_G(allowed_globals));
 	zend_hash_init(LUASANDBOX_G(allowed_globals), n, NULL, NULL, 0);
 	for (i = 0; luasandbox_allowed_globals[i]; i++) {
-		zend_hash_update(LUASANDBOX_G(allowed_globals), 
+		zend_hash_update(LUASANDBOX_G(allowed_globals),
 			luasandbox_allowed_globals[i], strlen(luasandbox_allowed_globals[i]) + 1,
 			(void*)"", 1, NULL);
 	}
@@ -328,8 +328,8 @@ static int luasandbox_math_randomseed(lua_State * L)
 
 /** {{{ luasandbox_lib_rethrow_fatal
  *
- * If the error on the top of the stack with the error return code given as a 
- * parameter is a fatal, rethrow the error. If the error is rethrown, the 
+ * If the error on the top of the stack with the error return code given as a
+ * parameter is a fatal, rethrow the error. If the error is rethrown, the
  * function does not return.
  */
 static void luasandbox_lib_rethrow_fatal(lua_State * L, int status)
@@ -346,7 +346,7 @@ static void luasandbox_lib_rethrow_fatal(lua_State * L, int status)
 			break;
 		case LUA_ERRMEM:
 		case LUA_ERRERR:
-			// Lua doesn't provide a public API for rethrowing these, so we 
+			// Lua doesn't provide a public API for rethrowing these, so we
 			// have to convert them to our own fatal error type
 			if (!luasandbox_is_fatal(L, -1)) {
 				luasandbox_wrap_fatal(L);
@@ -366,11 +366,11 @@ static int luasandbox_lib_error_wrapper(lua_State * L)
 	int status;
 	luaL_checkany(L, 1);
 
-	// This function is only called from luaG_errormsg(), which will later 
-	// unconditionally set the status code to LUA_ERRRUN, so we can assume 
+	// This function is only called from luaG_errormsg(), which will later
+	// unconditionally set the status code to LUA_ERRRUN, so we can assume
 	// that the error type is equivalent to LUA_ERRRUN.
 	if (luasandbox_is_fatal(L, 1)) {
-		// Just return to whatever called lua_pcall(), don't call the user 
+		// Just return to whatever called lua_pcall(), don't call the user
 		// function
 		return lua_gettop(L);
 	}
@@ -414,8 +414,8 @@ static int luasandbox_base_xpcall (lua_State *L)
 	int status;
 	luaL_checkany(L, 2);
 	lua_settop(L, 2);
-	
-	// We wrap the error function in a C closure. The error function already 
+
+	// We wrap the error function in a C closure. The error function already
 	// happens to be at the top of the stack, so we don't need to push it before
 	// calling lua_pushcfunction to make it an upvalue
 	lua_pushcclosure(L, luasandbox_lib_error_wrapper, 1);
@@ -432,7 +432,7 @@ static int luasandbox_base_xpcall (lua_State *L)
 /** {{{ luasandbox_os_clock
  *
  * Implementation of os.clock() which uses our high-resolution usage timer,
- * if available, to provide an accurate measure of Lua CPU usage since a 
+ * if available, to provide an accurate measure of Lua CPU usage since a
  * particular LuaSandbox object was created.
  */
 static int luasandbox_os_clock(lua_State * L)

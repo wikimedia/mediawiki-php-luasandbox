@@ -30,9 +30,9 @@ typedef struct {
 	int limiter_running;
 	int profiler_running;
 
-	// A HashTable storing the number of times each function was hit by the 
+	// A HashTable storing the number of times each function was hit by the
 	// profiler. The data is a size_t because that hits a special case in
-	// zend_hash which avoids the need to allocate separate space for the data 
+	// zend_hash which avoids the need to allocate separate space for the data
 	// on the heap.
 	HashTable * function_counts;
 

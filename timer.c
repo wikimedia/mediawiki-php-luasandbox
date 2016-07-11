@@ -158,10 +158,10 @@ static void luasandbox_timer_handle_profiler(luasandbox_timer * lt)
 	// It's necessary to leave the timer running while we're not actually in
 	// Lua, and just ignore signals that occur outside it, because Linux timers
 	// don't fire with any kind of precision. Timer delivery is routinely delayed
-	// by milliseconds regardless of how short a time you ask for, and 
-	// timer_gettime() just returns 1ns after the timer should have been delivered. 
-	// So if a call takes 100us, there's no way to start a timer and have it be 
-	// reliably delivered to within the function body, regardless of what you set 
+	// by milliseconds regardless of how short a time you ask for, and
+	// timer_gettime() just returns 1ns after the timer should have been delivered.
+	// So if a call takes 100us, there's no way to start a timer and have it be
+	// reliably delivered to within the function body, regardless of what you set
 	// it_value to.
 	php_luasandbox_obj * sandbox = lt->sandbox;
 	if (!sandbox || !sandbox->in_lua) {
@@ -172,7 +172,7 @@ static void luasandbox_timer_handle_profiler(luasandbox_timer * lt)
 	if (!sandbox->timed_out) {
 		int overrun;
 		lua_State * L = sandbox->state;
-		lua_sethook(L, luasandbox_timer_profiler_hook, 
+		lua_sethook(L, luasandbox_timer_profiler_hook,
 			LUA_MASKCOUNT | LUA_MASKCALL | LUA_MASKRET | LUA_MASKLINE, 1);
 		overrun = timer_getoverrun(sandbox->timer.profiler_timer->timer);
 		sandbox->timer.profiler_signal_count += overrun + 1;
