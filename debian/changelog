@@ -1,3 +1,15 @@
+php-luasandbox (2.0.13) UNRELEASED; urgency=medium
+
+  [ Kunal Mehta ]
+  * Add COPYING file
+
+  [ Brad Jorsch ]
+  * Make tests pass under HHVM
+  * Make LuaSandboxFunction_construct.phpt more robust
+  * Fix memory leak
+
+ -- Kunal Mehta <legoktm@member.fsf.org>  Mon, 11 Jul 2016 15:18:54 -0700
+
 php-luasandbox (2.0.12) trusty-wikimedia; urgency=medium
 
   * Adapting debian/rules to the newer HHVM package
