@@ -43,6 +43,10 @@ try {
 } catch ( LuaSandboxError $e ) {
 	print $e->getMessage() . "\n";
 }
+
+// HHVM leaks it otherwise, and the warning makes the test fail
+unset( $sandbox, $luaFactorial, $chunk, $e, $ret );
+
 --EXPECT--
 3628800
 array(1) {

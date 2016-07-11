@@ -10,5 +10,8 @@ $sandbox = new ExtendedLuaSandbox;
 $sandbox->var2 = 42;
 echo "ok\n";
 
+// HHVM leaks it otherwise, and the warning makes the test fail
+unset( $sandbox );
+
 --EXPECT--
 ok

@@ -57,6 +57,10 @@ foreach ( $tests as $desc => $func ) {
 		echo "LuaSandboxError: " . $e->getMessage() . "\n";
 	}
 }
+
+// HHVM leaks it otherwise, and the warning makes the test fail
+unset( $sandbox );
+
 --EXPECT--
 Normal: Ok
 With __ipairs: Ok

@@ -7,4 +7,4 @@ LuaSandboxFunction::construct() is private
 new LuaSandboxFunction;
 ?>
 --EXPECTF--
-Fatal error: Call to private%S LuaSandboxFunction::__construct%S from %s in %s on line %d
+%AFatal error:%sCall to private%S LuaSandboxFunction::__construct%S from %a
