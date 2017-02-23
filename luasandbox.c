@@ -1089,7 +1089,7 @@ PHP_METHOD(LuaSandbox, getProfilerFunctionReport)
 		if (units == LUASANDBOX_SAMPLES) {
 			zend_hash_add(Z_ARRVAL_P(return_value), key, count);
 		} else {
-			ZVAL_LONG(&v, Z_LVAL_P(count) * scale);
+			ZVAL_DOUBLE(&v, Z_LVAL_P(count) * scale);
 			zend_hash_add(Z_ARRVAL_P(return_value), key, &v);
 		}
 	} ZEND_HASH_FOREACH_END();
