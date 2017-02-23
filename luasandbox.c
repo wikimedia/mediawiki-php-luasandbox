@@ -193,7 +193,13 @@ const zend_function_entry luasandbox_methods[] = {
 	PHP_ME(LuaSandbox, unpauseUsageTimer, arginfo_luasandbox_unpauseUsageTimer, 0)
 	PHP_ME(LuaSandbox, enableProfiler, arginfo_luasandbox_enableProfiler, 0)
 	PHP_ME(LuaSandbox, disableProfiler, arginfo_luasandbox_disableProfiler, 0)
+#ifdef HHVM
+	// We need to wrap this method in ext_luasandbox.php for HHVM
+	PHP_ME(LuaSandbox, _internal_getProfilerFunctionReport, arginfo_luasandbox_getProfilerFunctionReport,
+		ZEND_ACC_PRIVATE | ZEND_ACC_FINAL)
+#else
 	PHP_ME(LuaSandbox, getProfilerFunctionReport, arginfo_luasandbox_getProfilerFunctionReport, 0)
+#endif
 	PHP_ME(LuaSandbox, callFunction, arginfo_luasandbox_callFunction, 0)
 	PHP_ME(LuaSandbox, wrapPhpFunction, arginfo_luasandbox_wrapPhpFunction, 0)
 	PHP_ME(LuaSandbox, registerLibrary, arginfo_luasandbox_registerLibrary, 0)
@@ -977,6 +983,7 @@ PHP_METHOD(LuaSandbox, disableProfiler)
 }
 /* }}} */
 
+#ifndef HHVM
 static int luasandbox_sort_profile(const void *a, const void *b TSRMLS_DC) /* {{{ */
 {
 	Bucket *bucket_a, *bucket_b;
@@ -1004,6 +1011,7 @@ static int luasandbox_sort_profile(const void *a, const void *b TSRMLS_DC) /* {{
 }
 
 /* }}} */
+#endif
 
 /* {{{ proto array LuaSandbox::getProfilerFunctionReport(int what = LuaSandbox::SECONDS)
  *
@@ -1017,7 +1025,12 @@ static int luasandbox_sort_profile(const void *a, const void *b TSRMLS_DC) /* {{
  *   - LuaSandbox::SECONDS: Measure in seconds of CPU time (default)
  *   - LuaSandbox::PERCENT: Measure percentage of CPU time
  */
+#ifdef HHVM
+// We need to wrap this method in ext_luasandbox.php for HHVM
+PHP_METHOD(LuaSandbox, _internal_getProfilerFunctionReport)
+#else
 PHP_METHOD(LuaSandbox, getProfilerFunctionReport)
+#endif
 {
 	long_param_t units = LUASANDBOX_SECONDS;
 	php_luasandbox_obj * sandbox = GET_LUASANDBOX_OBJ(getThis());
@@ -1041,7 +1054,10 @@ PHP_METHOD(LuaSandbox, getProfilerFunctionReport)
 	}
 
 	// Sort the input array in descending order of time usage
-#if PHP_VERSION_ID < 70000
+#ifdef HHVM
+	// HHVM's zend_hash_sort ignores the compar argument. The sorting is done
+	// in the systemlib instead.
+#elif PHP_VERSION_ID < 70000
 	zend_hash_sort(counts, zend_qsort, luasandbox_sort_profile, 0 TSRMLS_CC);
 #else
 	zend_hash_sort_ex(counts, zend_qsort, luasandbox_sort_profile, 0);

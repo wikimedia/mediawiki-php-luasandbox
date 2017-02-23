@@ -13,7 +13,14 @@
 	<<__Native("ZendCompat")>> function unpauseUsageTimer(): mixed;
 	<<__Native("ZendCompat")>> function enableProfiler(mixed $period): mixed;
 	<<__Native("ZendCompat")>> function disableProfiler(): mixed;
-	<<__Native("ZendCompat")>> function getProfilerFunctionReport(mixed $units): mixed;
+	<<__Native("ZendCompat")>> private final function _internal_getProfilerFunctionReport(mixed $units): mixed;
+
+	public function getProfilerFunctionReport(mixed $units): mixed {
+		$report = $this->_internal_getProfilerFunctionReport( $units );
+		arsort( $report );
+		return $report;
+	}
+
 	<<__Native("ZendCompat")>> function callFunction(mixed $name): mixed;
 	<<__Native("ZendCompat")>> function wrapPhpFunction(mixed $name, mixed $function): mixed;
 	<<__Native("ZendCompat")>> function registerLibrary(mixed $libname, mixed $functions): mixed;

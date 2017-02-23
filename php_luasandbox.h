@@ -57,7 +57,11 @@ PHP_METHOD(LuaSandbox, pauseUsageTimer);
 PHP_METHOD(LuaSandbox, unpauseUsageTimer);
 PHP_METHOD(LuaSandbox, enableProfiler);
 PHP_METHOD(LuaSandbox, disableProfiler);
+#ifdef HHVM
+PHP_METHOD(LuaSandbox, _internal_getProfilerFunctionReport);
+#else
 PHP_METHOD(LuaSandbox, getProfilerFunctionReport);
+#endif
 PHP_METHOD(LuaSandbox, callFunction);
 PHP_METHOD(LuaSandbox, wrapPhpFunction);
 PHP_METHOD(LuaSandbox, registerLibrary);
