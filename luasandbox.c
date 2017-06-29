@@ -1452,7 +1452,7 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 #else
 		v = &(args[i]);
 #endif
-		if (!luasandbox_push_zval(L, v)) {
+		if (!luasandbox_push_zval(L, v, NULL)) {
 			php_error_docref(NULL TSRMLS_CC, E_WARNING,
 				"unable to convert argument %d to a lua value", i + 1);
 			lua_settop(L, origTop - 1);
@@ -1800,7 +1800,7 @@ int luasandbox_call_php(lua_State * L)
 				{
 					zval ** value;
 					zend_hash_get_current_data_ex(ht, (void**)&value, &p);
-					luasandbox_push_zval(L, *value);
+					luasandbox_push_zval(L, *value, NULL);
 					num_results++;
 				}
 			} else {
@@ -1821,7 +1821,7 @@ int luasandbox_call_php(lua_State * L)
 				zval *value;
 				ZEND_HASH_FOREACH_VAL(ht, value)
 				{
-					luasandbox_push_zval(L, value);
+					luasandbox_push_zval(L, value, NULL);
 					num_results++;
 				} ZEND_HASH_FOREACH_END();
 			} else {

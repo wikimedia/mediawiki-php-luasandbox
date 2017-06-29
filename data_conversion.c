@@ -14,22 +14,20 @@
 #include "zend_exceptions.h"
 
 #ifdef HHVM
-#include <set>
-static IMPLEMENT_THREAD_LOCAL(std::set<HashTable*>, protectionSet);
 using std::isfinite;
 #endif
 
 static void luasandbox_throw_runtimeerror(lua_State * L, zval * sandbox_zval, const char *message TSRMLS_DC);
-static inline int luasandbox_is_recursive(HashTable * ht);
-static inline void luasandbox_protect_recursion(HashTable * ht);
-static inline void luasandbox_unprotect_recursion(HashTable * ht);
+
+static inline int luasandbox_protect_recursion(zval * z, HashTable ** recursionGuard, int * allocated);
+static inline void luasandbox_unprotect_recursion(zval * z, HashTable * recursionGuard, int allocated);
 
 static int luasandbox_lua_to_array(HashTable *ht, lua_State *L, int index,
 	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC);
 static int luasandbox_lua_pair_to_array(HashTable *ht, lua_State *L,
 	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC);
 static int luasandbox_free_zval_userdata(lua_State * L);
-static int luasandbox_push_hashtable(lua_State * L, HashTable * ht);
+static int luasandbox_push_hashtable(lua_State * L, HashTable * ht, HashTable * recursionGuard);
 static int luasandbox_has_error_marker(lua_State * L, int index, void * marker);
 
 extern zend_class_entry *luasandboxfunction_ce;
@@ -65,7 +63,7 @@ void luasandbox_data_conversion_init(lua_State * L)
  * Convert a zval to an appropriate Lua type and push the resulting value on to
  * the stack.
  */
-int luasandbox_push_zval(lua_State * L, zval * z)
+int luasandbox_push_zval(lua_State * L, zval * z, HashTable * recursionGuard)
 {
 	switch (Z_TYPE_P(z)) {
 #ifdef IS_UNDEF
@@ -93,14 +91,19 @@ int luasandbox_push_zval(lua_State * L, zval * z)
 			lua_pushboolean(L, 0);
 			break;
 #endif
-		case IS_ARRAY:
-			if (!luasandbox_push_hashtable(L, Z_ARRVAL_P(z))) {
+		case IS_ARRAY: {
+			int ret, allocated = 0;
+			if (!luasandbox_protect_recursion(z, &recursionGuard, &allocated)) {
 				return 0;
 			}
-			break;
+			ret = luasandbox_push_hashtable(L, Z_ARRVAL_P(z), recursionGuard);
+			luasandbox_unprotect_recursion(z, recursionGuard, allocated);
+			return ret;
+		}
 		case IS_OBJECT: {
 			TSRMLS_FETCH();
 			zend_class_entry * objce;
+			int ret, allocated = 0;
 
 			objce = Z_OBJCE_P(z);
 			if (instanceof_function(objce, luasandboxfunction_ce TSRMLS_CC)) {
@@ -114,17 +117,26 @@ int luasandbox_push_zval(lua_State * L, zval * z)
 				break;
 			}
 
-			if (!luasandbox_push_hashtable(L, Z_OBJPROP_P(z))) {
+			if (!luasandbox_protect_recursion(z, &recursionGuard, &allocated)) {
 				return 0;
 			}
-			break;
+			ret = luasandbox_push_hashtable(L, Z_OBJPROP_P(z), recursionGuard);
+			luasandbox_unprotect_recursion(z, recursionGuard, allocated);
+			return ret;
 		}
 		case IS_STRING:
 			lua_pushlstring(L, Z_STRVAL_P(z), Z_STRLEN_P(z));
 			break;
 #ifdef IS_REFERENCE
-		case IS_REFERENCE:
-			return luasandbox_push_zval(L, Z_REFVAL_P(z));
+		case IS_REFERENCE: {
+			int ret, allocated = 0;
+			if (!luasandbox_protect_recursion(z, &recursionGuard, &allocated)) {
+				return 0;
+			}
+			ret = luasandbox_push_zval(L, Z_REFVAL_P(z), recursionGuard);
+			luasandbox_unprotect_recursion(z, recursionGuard, allocated);
+			return ret;
+		}
 #endif
 
 		case IS_RESOURCE:
@@ -194,7 +206,7 @@ void luasandbox_push_zval_userdata(lua_State * L, zval * z)
  * Helper function for luasandbox_push_zval. Create a new table on the top of
  * the stack and add the zvals in the HashTable to it.
  */
-static int luasandbox_push_hashtable(lua_State * L, HashTable * ht)
+static int luasandbox_push_hashtable(lua_State * L, HashTable * ht, HashTable * recursionGuard)
 {
 	// Recursion requires an arbitrary amount of stack space so we have to
 	// check the stack.
@@ -204,13 +216,6 @@ static int luasandbox_push_hashtable(lua_State * L, HashTable * ht)
 	if (!ht || !zend_hash_num_elements(ht)) {
 		return 1;
 	}
-
-	if (luasandbox_is_recursive(ht)) {
-		TSRMLS_FETCH();
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "recursion detected");
-		return 0;
-	}
-	luasandbox_protect_recursion(ht);
 
 #if PHP_VERSION_ID < 70000
 	HashPosition p;
@@ -231,11 +236,10 @@ static int luasandbox_push_hashtable(lua_State * L, HashTable * ht)
 			lua_pushinteger(L, lkey);
 		}
 
-		if (!luasandbox_push_zval(L, *value)) {
+		if (!luasandbox_push_zval(L, *value, recursionGuard)) {
 			// Failed to process that data value
 			// Pop the key and the half-constructed table
 			lua_pop(L, 2);
-			luasandbox_unprotect_recursion(ht);
 			return 0;
 		}
 
@@ -253,11 +257,10 @@ static int luasandbox_push_hashtable(lua_State * L, HashTable * ht)
 			lua_pushinteger(L, lkey);
 		}
 
-		if (!luasandbox_push_zval(L, value)) {
+		if (!luasandbox_push_zval(L, value, recursionGuard)) {
 			// Failed to process that data value
 			// Pop the key and the half-constructed table
 			lua_pop(L, 2);
-			luasandbox_unprotect_recursion(ht);
 			return 0;
 		}
 
@@ -265,7 +268,6 @@ static int luasandbox_push_hashtable(lua_State * L, HashTable * ht)
 	} ZEND_HASH_FOREACH_END();
 #endif
 
-	luasandbox_unprotect_recursion(ht);
 	return 1;
 }
 /* }}} */
@@ -769,51 +771,56 @@ void luasandbox_throw_runtimeerror(lua_State * L, zval * sandbox_zval, const cha
 }
 /* }}} */
 
-/** {{{ luasandbox_is_recursive
- * Check if the recursion flag is set on this hashtable.
+/** {{{ luasandbox_protect_recursion
  *
- * Under Zend, this is implemented using nApplyCount, following the example
- * of HASH_PROTECT_RECURSION() in zend_hash.c. Under HHVM, this is implemented
- * with a std::set of pointer values, since the HashTable object itself has
- * no space for storing a recursion level.
+ * Check that the zval isn't already in recursionGuard, and if so add it. May
+ * allocate recursionGuard if necessary.
+ *
+ * Returns 1 if recursion is not detected, 0 if it was.
  */
-static inline int luasandbox_is_recursive(HashTable * ht) {
-#ifdef HHVM
-	return (int)(protectionSet.get()->count(ht));
-#elif PHP_VERSION_ID < 70000
-	return ht->nApplyCount;
+static inline int luasandbox_protect_recursion(zval * z, HashTable ** recursionGuard, int * allocated) {
+	if (!*recursionGuard) {
+		*allocated = 1;
+		ALLOC_HASHTABLE(*recursionGuard);
+		zend_hash_init(*recursionGuard, 1, NULL, NULL, 0);
+	} else if (
+#if PHP_VERSION_ID < 70000
+		zend_hash_exists(*recursionGuard, (char*)&z, sizeof(void*))
 #else
-	return ht->u.v.nApplyCount;
+		zend_hash_str_exists(*recursionGuard, (char*)&z, sizeof(void*))
 #endif
+	) {
+		TSRMLS_FETCH();
+		php_error_docref(NULL TSRMLS_CC, E_WARNING, "Cannot pass circular reference to Lua");
+		return 0;
+	}
+
+#if PHP_VERSION_ID < 70000
+	zend_hash_update(*recursionGuard, (char*)&z, sizeof(void*), (void*)"", 1, NULL);
+#else
+	zval zv;
+	ZVAL_TRUE(&zv);
+	zend_hash_str_update(*recursionGuard, (char*)&z, sizeof(void*), &zv);
+#endif
+
+	return 1;
 }
 /* }}} */
 
-/** {{{ luasandbox_protect_recursion
+/** {{{ luasandbox_unprotect_recursion
  *
- * Increment the recursion level
+ * Undoes what luasandbox_protect_recursion did.
  */
-static inline void luasandbox_protect_recursion(HashTable * ht) {
-#ifdef HHVM
-	protectionSet.get()->insert(ht);
-#elif PHP_VERSION_ID < 70000
-	ht->nApplyCount++;
+static inline void luasandbox_unprotect_recursion(zval * z, HashTable * recursionGuard, int allocated) {
+	if (allocated) {
+		zend_hash_destroy(recursionGuard);
+		FREE_HASHTABLE(recursionGuard);
+	} else {
+#if PHP_VERSION_ID < 70000
+		zend_hash_del(recursionGuard, (char*)&z, sizeof(void*));
 #else
-	ht->u.v.nApplyCount++;
+		zend_hash_str_del(recursionGuard, (char*)&z, sizeof(void*));
 #endif
-}
-/* }}} */
-
-/** {{{ luasandbox_protect_recursion
- *
- * Decrement the recursion level
- */
-static inline void luasandbox_unprotect_recursion(HashTable * ht) {
-#ifdef HHVM
-	protectionSet.get()->erase(ht);
-#elif PHP_VERSION_ID < 70000
-	ht->nApplyCount--;
-#else
-	ht->u.v.nApplyCount--;
-#endif
+	}
 }
 /* }}} */
