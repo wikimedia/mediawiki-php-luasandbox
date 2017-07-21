@@ -1,14 +1,21 @@
-php-luasandbox (2.0.13) UNRELEASED; urgency=medium
+php-luasandbox (2.0.13) trusty-wikimedia; urgency=medium
 
   [ Kunal Mehta ]
   * Add COPYING file
+  * Don't try to automatically get the version from the debian/changelog
+  * Remove EXPERIMENTAL
 
   [ Brad Jorsch ]
   * Make tests pass under HHVM
   * Make LuaSandboxFunction_construct.phpt more robust
   * Fix memory leak
+  * Update for PHP 7
+  * Fix HHVM test script
+  * Fix getProfilerFunctionReport 'seconds' and 'percent' output in PHP7
+  * Fix getProfilerFunctionReport sorting in HHVM
+  * Redo PHP->Lua data structure recursion protection
 
- -- Kunal Mehta <legoktm@member.fsf.org>  Mon, 11 Jul 2016 15:18:54 -0700
+ -- Tim Starling <tstarling@wikimedia.org>  Fri, 21 Jul 2017 14:08:22 +1000
 
 php-luasandbox (2.0.12) trusty-wikimedia; urgency=medium
 
