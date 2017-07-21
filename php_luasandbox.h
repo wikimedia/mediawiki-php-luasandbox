@@ -57,7 +57,11 @@ PHP_METHOD(LuaSandbox, pauseUsageTimer);
 PHP_METHOD(LuaSandbox, unpauseUsageTimer);
 PHP_METHOD(LuaSandbox, enableProfiler);
 PHP_METHOD(LuaSandbox, disableProfiler);
+#ifdef HHVM
+PHP_METHOD(LuaSandbox, _internal_getProfilerFunctionReport);
+#else
 PHP_METHOD(LuaSandbox, getProfilerFunctionReport);
+#endif
 PHP_METHOD(LuaSandbox, callFunction);
 PHP_METHOD(LuaSandbox, wrapPhpFunction);
 PHP_METHOD(LuaSandbox, registerLibrary);
@@ -78,11 +82,11 @@ php_luasandbox_obj * luasandbox_get_php_obj(lua_State * L);
 /** {{{ luasandbox_enter_php
  *
  * This function must be called each time a C function is entered from Lua
- * and the PHP state needs to be accessed in any way. Before exiting the 
+ * and the PHP state needs to be accessed in any way. Before exiting the
  * function, luasandbox_leave_php() must be called.
  *
- * This sets a flag which indicates to the timeout signal handler that it is 
- * unsafe to call longjmp() to return control to PHP. If the flag is not 
+ * This sets a flag which indicates to the timeout signal handler that it is
+ * unsafe to call longjmp() to return control to PHP. If the flag is not
  * correctly set, memory may be corrupted and security compromised.
  */
 static inline void luasandbox_enter_php(lua_State * L, php_luasandbox_obj * intern)
@@ -107,7 +111,7 @@ static inline void luasandbox_enter_php_ignore_timeouts(lua_State * L, php_luasa
 
 /** {{{ luasandbox_leave_php
  *
- * This function must be called after luasandbox_enter_php, before the callback 
+ * This function must be called after luasandbox_enter_php, before the callback
  * from Lua returns.
  */
 static inline void luasandbox_leave_php(lua_State * L, php_luasandbox_obj * intern)
@@ -129,7 +133,7 @@ int luasandbox_open_string(lua_State * L);
 
 void luasandbox_data_conversion_init(lua_State * L);
 
-int luasandbox_push_zval(lua_State * L, zval * z);
+int luasandbox_push_zval(lua_State * L, zval * z, HashTable *recursionGuard);
 void luasandbox_push_zval_userdata(lua_State * L, zval * z);
 int luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC);

@@ -30,9 +30,9 @@ typedef struct {
 	int limiter_running;
 	int profiler_running;
 
-	// A HashTable storing the number of times each function was hit by the 
+	// A HashTable storing the number of times each function was hit by the
 	// profiler. The data is a size_t because that hits a special case in
-	// zend_hash which avoids the need to allocate separate space for the data 
+	// zend_hash which avoids the need to allocate separate space for the data
 	// on the heap.
 	HashTable * function_counts;
 
@@ -77,7 +77,11 @@ struct _php_luasandbox_obj {
 	php_luasandbox_alloc alloc;
 	int in_php;
 	int in_lua;
+#if PHP_VERSION_ID < 70000
 	zval * current_zval; /* The zval for the LuaSandbox which is currently executing Lua code */
+#else
+	zval current_zval; /* The zval for the LuaSandbox which is currently executing Lua code */
+#endif
 	volatile int timed_out;
 	int is_cpu_limited;
 	luasandbox_timer_set timer;
@@ -89,10 +93,29 @@ typedef struct _php_luasandbox_obj php_luasandbox_obj;
 
 struct _php_luasandboxfunction_obj {
 	zend_object std;
+#if PHP_VERSION_ID < 70000
 	zval * sandbox;
+#else
+	zval sandbox;
+#endif
 	int index;
 };
 typedef struct _php_luasandboxfunction_obj php_luasandboxfunction_obj;
+
+// Accessor macros
+#if PHP_VERSION_ID < 70000
+#define GET_LUASANDBOX_OBJ(z) (php_luasandbox_obj *)zend_object_store_get_object(z TSRMLS_CC)
+#define GET_LUASANDBOXFUNCTION_OBJ(z) (php_luasandboxfunction_obj *)zend_object_store_get_object(z TSRMLS_CC)
+#define LUASANDBOXFUNCTION_SANDBOX_IS_OK(pfunc) (pfunc)->sandbox
+#define LUASANDBOXFUNCTION_GET_SANDBOX_ZVALPTR(pfunc) (pfunc)->sandbox
+#define LUASANDBOX_GET_CURRENT_ZVAL_PTR(psandbox) (psandbox)->current_zval
+#else
+#define GET_LUASANDBOX_OBJ(z) (php_luasandbox_obj *)Z_OBJ_P(z)
+#define GET_LUASANDBOXFUNCTION_OBJ(z) (php_luasandboxfunction_obj *)Z_OBJ_P(z)
+#define LUASANDBOXFUNCTION_SANDBOX_IS_OK(pfunc) !Z_ISUNDEF((pfunc)->sandbox)
+#define LUASANDBOXFUNCTION_GET_SANDBOX_ZVALPTR(pfunc) &((pfunc)->sandbox)
+#define LUASANDBOX_GET_CURRENT_ZVAL_PTR(psandbox) &((psandbox)->current_zval)
+#endif
 
 #endif /*LUASANDBOX_TYPES_H*/
 

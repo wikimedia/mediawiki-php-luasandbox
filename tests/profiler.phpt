@@ -23,6 +23,9 @@ $sandbox->callFunction( 'lua.test' );
 
 echo "Samples: " . $sandbox->getProfilerFunctionReport( LuaSandbox::SAMPLES )['clock'] . "\n";
 echo "Seconds: " . $sandbox->getProfilerFunctionReport( LuaSandbox::SECONDS )['clock'] . "\n";
+echo "Seconds > 0: "
+	. ( $sandbox->getProfilerFunctionReport( LuaSandbox::SECONDS )['clock'] > 0 ? 'yes' : 'no' )
+	. "\n";
 echo "Percent: " . $sandbox->getProfilerFunctionReport( LuaSandbox::PERCENT )['clock'] . "\n";
 
 // Test that re-enabling the profiler doesn't explode
@@ -32,6 +35,9 @@ $sandbox->callFunction( 'lua.test' );
 
 echo "Samples: " . $sandbox->getProfilerFunctionReport( LuaSandbox::SAMPLES )['clock'] . "\n";
 echo "Seconds: " . $sandbox->getProfilerFunctionReport( LuaSandbox::SECONDS )['clock'] . "\n";
+echo "Seconds > 0: "
+	. ( $sandbox->getProfilerFunctionReport( LuaSandbox::SECONDS )['clock'] > 0 ? 'yes' : 'no' )
+	. "\n";
 echo "Percent: " . $sandbox->getProfilerFunctionReport( LuaSandbox::PERCENT )['clock'] . "\n";
 
 // Test that disabling the profiler doesn't explode
@@ -43,7 +49,9 @@ unset( $sandbox );
 --EXPECTF--
 Samples: %d
 Seconds: %f
+Seconds > 0: yes
 Percent: %f
 Samples: %d
 Seconds: %f
+Seconds > 0: yes
 Percent: %f
