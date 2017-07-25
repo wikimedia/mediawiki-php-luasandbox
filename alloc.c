@@ -17,7 +17,7 @@
 #endif
 
 static inline int luasandbox_update_memory_accounting(php_luasandbox_alloc * obj,
-	size_t osize, size_t nsize, int in_lua);
+	size_t osize, size_t nsize);
 #ifdef LUASANDBOX_LJ_64
 static void *luasandbox_passthru_alloc(void *ud, void *ptr, size_t osize, size_t nsize);
 #else
@@ -60,14 +60,10 @@ void luasandbox_alloc_delete_state(php_luasandbox_alloc * alloc, lua_State * L)
  * Returns 1 if the allocation should be allowed, 0 if it should fail.
  */
 static inline int luasandbox_update_memory_accounting(php_luasandbox_alloc * alloc,
-	size_t osize, size_t nsize, int in_lua)
+	size_t osize, size_t nsize)
 {
-	// Allow some extra memory overhead for non-in_lua allocations to avoid
-	// getting into luasandbox_panic due to allocation failures.
-	size_t slop = in_lua ? 0 : 1024*1024;
-
-	if (nsize > alloc->memory_limit
-		|| alloc->memory_usage > alloc->memory_limit + slop - nsize)
+	if (nsize > osize && (nsize > alloc->memory_limit
+		|| alloc->memory_usage + nsize > alloc->memory_limit))
 	{
 		// Memory limit exceeded
 		return 0;
@@ -98,7 +94,7 @@ static void *luasandbox_php_alloc(void *ud, void *ptr, size_t osize, size_t nsiz
 	php_luasandbox_obj * obj = (php_luasandbox_obj*)ud;
 	void * nptr;
 	obj->in_php ++;
-	if (!luasandbox_update_memory_accounting(&obj->alloc, osize, nsize, obj->in_lua)) {
+	if (!luasandbox_update_memory_accounting(&obj->alloc, osize, nsize)) {
 		obj->in_php --;
 		return NULL;
 	}
@@ -130,7 +126,7 @@ static void *luasandbox_php_alloc(void *ud, void *ptr, size_t osize, size_t nsiz
 static void *luasandbox_passthru_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
 {
 	php_luasandbox_obj * obj = (php_luasandbox_obj*)ud;
-	if (!luasandbox_update_memory_accounting(&obj->alloc, osize, nsize, obj->in_lua)) {
+	if (!luasandbox_update_memory_accounting(&obj->alloc, osize, nsize)) {
 		return NULL;
 	}
 	return obj->alloc.old_alloc(obj->alloc.old_alloc_ud, ptr, osize, nsize);

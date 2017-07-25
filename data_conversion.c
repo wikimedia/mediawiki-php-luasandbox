@@ -609,6 +609,8 @@ void luasandbox_wrap_fatal(lua_State * L)
  *
  * Check if the value at the given stack index is a fatal error wrapper
  * created by luasandbox_wrap_fatal(). Return 1 if it is, 0 otherwise.
+ *
+ * This function cannot raise Lua errors.
  */
 int luasandbox_is_fatal(lua_State * L, int index)
 {
@@ -617,6 +619,11 @@ int luasandbox_is_fatal(lua_State * L, int index)
 /* }}} */
 
 /** {{{ luasandbox_is_trace_error
+ *
+ * Check if the value at the given stack index is an error wrapper created by
+ * luasandbox_attach_trace(). Return 1 if it is, 0 otherwise.
+ *
+ * This function cannot raise Lua errors.
  */
 int luasandbox_is_trace_error(lua_State * L, int index)
 {
@@ -651,6 +658,8 @@ static int luasandbox_has_error_marker(lua_State * L, int index, void * marker)
  * This calls lua_tolstring() and will corrupt the value on the stack as
  * described in that function's documentation. The string is valid until the
  * Lua value is destroyed.
+ *
+ * This function can raise Lua memory errors, but no other Lua errors.
  */
 const char * luasandbox_error_to_string(lua_State * L, int index)
 {

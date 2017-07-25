@@ -47,11 +47,13 @@ try {
 // HHVM leaks it otherwise, and the warning makes the test fail
 unset( $sandbox, $luaFactorial, $chunk, $e, $ret );
 
---EXPECT--
+--EXPECTF--
 3628800
 array(1) {
   [0]=>
   int(3628800)
 }
+%AWarning: LuaSandboxFunction::call(): Failed to generate Lua trace (C stack overflow) in %s on line %d
 C stack overflow
+%AWarning: LuaSandboxFunction::call(): Failed to generate Lua trace (C stack overflow) in %s on line %d
 C stack overflow
