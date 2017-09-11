@@ -1,18 +1,9 @@
 #!/usr/bin/make -f
 
-HHVM=$(shell test -f /usr/bin/hphpize && echo "HHVM")
-
-ifeq ($(HHVM), HHVM)
-	configure_targets = php_configure hhvm_configure
-	build_targets = php_build hhvm_build
-	install_targets = php_install hhvm_install
-	gencontrol_targets =  php_gencontrol hhvm_gencontrol
-else
-	configure_targets = php_configure
-	build_targets = php_build
-	install_targets = php_install
-	gencontrol_targets =  php_gencontrol hhvm_gencontrol
-endif
+configure_targets = php_configure
+build_targets = php_build
+install_targets = php_install
+gencontrol_targets =  php_gencontrol
 
 %:
 	dh $@
@@ -26,49 +17,23 @@ php_configure:
 		| tar -xf - -C debian/build-php
 	cd debian/build-php && /usr/bin/phpize && dh_auto_configure
 
-hhvm_configure:
-	## HHVM
-	mkdir -p debian/build-hhvm
-	tar -cf - --exclude=debian/build* --exclude=.pc . \
-		| tar -xf - -C debian/build-hhvm
-	cd debian/build-hhvm && /usr/bin/hphpize
-	# workaround "cmake .." bug in HHVM's CMake extension code
-	# Also, link to lua-c++
-	cd debian/build-hhvm && cmake . \
-		-DCMAKE_INSTALL_PREFIX=/usr \
-		-DCMAKE_VERBOSE_MAKEFILE=ON \
-		-DCMAKE_BUILD_TYPE=None \
-		-DLUA_USE_CPP=1
-	cd debian/build-hhvm && dh_auto_configure
-
 override_dh_auto_build: $(build_targets)
 
 php_build:
 	cd debian/build-php  && dh_auto_build
-
-hhvm_build:
-	cd debian/build-hhvm && dh_auto_build
 
 override_dh_auto_test:
 
 override_dh_auto_install: $(install_targets)
 
 php_install:
-	INSTALL_ROOT=$(CURDIR)/debian/php-luasandbox make -C debian/build-php install
-
-hhvm_install:
-	DESTDIR=$(CURDIR)/debian/hhvm-luasandbox make -C debian/build-hhvm install
+	INSTALL_ROOT=$(CURDIR)/debian/php5.5-luasandbox make -C debian/build-php install
 
 override_dh_gencontrol: $(gencontrol_targets)
 	dh_gencontrol
 
 php_gencontrol:
-	echo "php:Depends=phpapi-$(shell php-config5 --phpapi)" >> debian/php-luasandbox.substvars
-
-hhvm_gencontrol:
-	# HHVM does *not* ensure binary compatibility
-	hhvmapi=$(shell /usr/bin/hhvm --version | sed -ne 's/^HipHop VM \(.*\)\..*/\1/p') && \
-		[ -n "$${hhvmapi}" ] && echo "hhvm:ApiVersion=hhvm-api-$${hhvmapi}" >> debian/hhvm-luasandbox.substvars
+	echo "php:Depends=phpapi-$(shell php-config5.5 --phpapi)" >> debian/php5.5-luasandbox.substvars
 
 override_dh_auto_clean:
 	rm -rf debian/build*
