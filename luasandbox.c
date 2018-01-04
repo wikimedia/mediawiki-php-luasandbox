@@ -709,9 +709,6 @@ PHP_METHOD(LuaSandbox, getVersionInfo)
 	array_init_size(return_value, 2);
 	compat_add_assoc_string(return_value, "LuaSandbox", LUASANDBOX_VERSION);
 	compat_add_assoc_string(return_value, "Lua", LUA_RELEASE);
-#ifdef LUAJIT_VERSION
-	compat_add_assoc_string(return_value, "LuaJIT", LUAJIT_VERSION);
-#endif
 }
 
 /* }}} */

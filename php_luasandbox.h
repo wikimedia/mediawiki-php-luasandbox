@@ -4,9 +4,6 @@
 
 #include <lua.h>
 #include <lualib.h>
-#ifdef LUA_JITLIBNAME
-#include <luajit.h>
-#endif
 #include <signal.h>
 
 #include "luasandbox_types.h"
