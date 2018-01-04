@@ -1,14 +1,4 @@
 This is a PHP extension. To compile it:
 
- $ phpize
- $ ./configure
- $ make
+For installation instructions, see https://www.mediawiki.org/wiki/Extension:Scribunto#LuaSandbox
 
-It requires a few dependencies:
-
- luajit - LUA just in time compiler. http://www.luajit.org/
-
-== Mac OS X ==
-
-Using brew:
- brew install luajit
