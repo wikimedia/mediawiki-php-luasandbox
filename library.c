@@ -11,6 +11,7 @@
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
+#include <math.h>
 
 #include "php.h"
 #include "php_luasandbox.h"
@@ -450,14 +451,21 @@ static int luasandbox_base_xpcall (lua_State *L)
  */
 static int luasandbox_os_clock(lua_State * L)
 {
+	double clock;
+
 #ifdef LUASANDBOX_NO_CLOCK
-	lua_pushnumber(L, ((lua_Number)clock())/(lua_Number)CLOCKS_PER_SEC);
+	clock = ((double)clock())/(double)CLOCKS_PER_SEC;
 #else
 	struct timespec ts;
 	php_luasandbox_obj * sandbox = luasandbox_get_php_obj(L);
 	luasandbox_timer_get_usage(&sandbox->timer, &ts);
-	lua_pushnumber(L, ts.tv_sec + 1e-9 * ts.tv_nsec);
+	clock = ts.tv_sec + 1e-9 * ts.tv_nsec;
 #endif
+
+	// Reduce precision to 20μs to mitigate timing attacks
+	clock = round(clock * 50000) / 50000;
+
+	lua_pushnumber(L, (lua_Number)clock);
 	return 1;
 }
 
