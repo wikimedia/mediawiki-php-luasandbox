@@ -33,11 +33,31 @@ doTest( 'empty string', '' );
 doTest( 'string containing NULs', "foo\0bar" );
 doTest( 'array', array( 'foo', 'bar' ) );
 doTest( 'associative array', array( 'foo', 'bar' => 'baz' ) );
-doTest( 'object', (object)array( 'foo' => 1, 'bar' => 'baz' ) );
-doTest( 'object with numeric keys', (object)array( 'foo', 'bar' ) );
 
 $var = 42;
 doTest( 'array with reference', [ &$var ] );
+
+$sandbox = new LuaSandbox;
+$sandbox->setMemoryLimit( 100000 );
+$sandbox->setCPULimit( 0.1 );
+$func = $sandbox->wrapPhpFunction( function ( $x ) { return [ "FUNC: $x" ]; } );
+try {
+	$ret = $sandbox->loadString( 'return ...' )->call( $func );
+	$ret2 = $ret[0]->call( "ok" );
+	printf( "%-25s %s\n", "function, pass-through:", $ret2[0] );
+
+	$ret = $sandbox->loadString( 'f = ...; return f( "ok" )' )->call( $func );
+	printf( "%-25s %s\n", "function, called:", $ret[0] );
+
+	$ret = $sandbox->loadString( 'return function ( x ) return "FUNC: " .. x end' )->call();
+	$ret2 = $ret[0]->call( "ok" );
+	printf( "%-25s %s\n", "function, returned:", $ret2[0] );
+} catch ( LuaSandboxError $e ) {
+	printf( "EXCEPTION: %s\n", $e->getMessage() );
+}
+
+// HHVM leaks it otherwise, and the warning makes the test fail
+unset( $ret, $func, $sandbox );
 
 --EXPECT--
 null:                     NULL
@@ -53,6 +73,7 @@ empty string:             ''
 string containing NULs:   'foo' . "\0" . 'bar'
 array:                    array ( 0 => 'foo', 1 => 'bar', )
 associative array:        array ( 0 => 'foo', 'bar' => 'baz', )
-object:                   array ( 'bar' => 'baz', 'foo' => 1, )
-object with numeric keys: array ( 0 => 'foo', 1 => 'bar', )
 array with reference:     array ( 0 => 42, )
+function, pass-through:   FUNC: ok
+function, called:         FUNC: ok
+function, returned:       FUNC: ok

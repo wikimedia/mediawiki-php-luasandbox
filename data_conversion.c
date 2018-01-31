@@ -103,7 +103,6 @@ int luasandbox_push_zval(lua_State * L, zval * z, HashTable * recursionGuard)
 		case IS_OBJECT: {
 			TSRMLS_FETCH();
 			zend_class_entry * objce;
-			int ret, allocated = 0;
 
 			objce = Z_OBJCE_P(z);
 			if (instanceof_function(objce, luasandboxfunction_ce TSRMLS_CC)) {
@@ -117,12 +116,15 @@ int luasandbox_push_zval(lua_State * L, zval * z, HashTable * recursionGuard)
 				break;
 			}
 
-			if (!luasandbox_protect_recursion(z, &recursionGuard, &allocated)) {
-				return 0;
-			}
-			ret = luasandbox_push_hashtable(L, Z_OBJPROP_P(z), recursionGuard);
-			luasandbox_unprotect_recursion(z, recursionGuard, allocated);
-			return ret;
+			php_error_docref(NULL TSRMLS_CC, E_WARNING, "Unable to convert object of type %s",
+#if PHP_VERSION_ID < 70000
+				objce->name
+#else
+				ZSTR_VAL(objce->name)
+#endif
+			);
+
+			return 0;
 		}
 		case IS_STRING:
 			lua_pushlstring(L, Z_STRVAL_P(z), Z_STRLEN_P(z));

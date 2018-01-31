@@ -61,12 +61,7 @@ $test['foo'] = &$test;
 doTest( 'recursive array', $test );
 
 $test = new stdClass;
-$test->foo = &$test;
-doTest( 'recursive object', $test );
-
-$test = new stdClass;
-$test->foo = [ &$test ];
-doTest( 'recursive object/array', $test );
+doTest( 'object', $test );
 
 doTest2( 'recursive table', 'v = {}; v.v = v' );
 
@@ -76,15 +71,10 @@ recursive array (call PHP->Lua): %AWarning: LuaSandboxFunction::call(): Cannot p
 false
 recursive array (return PHP->Lua): %AWarning: LuaSandboxFunction::call(): Cannot pass circular reference to Lua in %s on line %d
 false
-recursive object (call PHP->Lua): %AWarning: LuaSandboxFunction::call(): Cannot pass circular reference to Lua in %s on line %d
+object (call PHP->Lua): %AWarning: LuaSandboxFunction::call(): Unable to convert object of type stdClass in %s on line %d
 %AWarning: LuaSandboxFunction::call(): unable to convert argument 1 to a lua value in %s on line %d
 false
-recursive object (return PHP->Lua): %AWarning: LuaSandboxFunction::call(): Cannot pass circular reference to Lua in %s on line %d
-false
-recursive object/array (call PHP->Lua): %AWarning: LuaSandboxFunction::call(): Cannot pass circular reference to Lua in %s on line %d
-%AWarning: LuaSandboxFunction::call(): unable to convert argument 1 to a lua value in %s on line %d
-false
-recursive object/array (return PHP->Lua): %AWarning: LuaSandboxFunction::call(): Cannot pass circular reference to Lua in %s on line %d
+object (return PHP->Lua): %AWarning: LuaSandboxFunction::call(): Unable to convert object of type stdClass in %s on line %d
 false
 recursive table (call Lua->PHP): EXCEPTION: Cannot pass circular reference to PHP
 recursive table (return Lua->PHP): EXCEPTION: Cannot pass circular reference to PHP
