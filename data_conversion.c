@@ -8,6 +8,7 @@
 #include <limits.h>
 #include <float.h>
 #include <math.h>
+#include <inttypes.h>
 
 #include "php.h"
 #include "php_luasandbox.h"
@@ -210,6 +211,10 @@ void luasandbox_push_zval_userdata(lua_State * L, zval * z)
  */
 static int luasandbox_push_hashtable(lua_State * L, HashTable * ht, HashTable * recursionGuard)
 {
+#if SIZEOF_LONG > 4
+	char buffer[MAX_LENGTH_OF_LONG + 1];
+#endif
+
 	// Recursion requires an arbitrary amount of stack space so we have to
 	// check the stack.
 	luaL_checkstack(L, 10, "converting PHP array to Lua");
@@ -232,6 +237,17 @@ static int luasandbox_push_hashtable(lua_State * L, HashTable * ht, HashTable * 
 		int key_type = zend_hash_get_current_key_ex(ht, &key, &key_length,
 				&lkey, 0, &p);
 		zend_hash_get_current_data_ex(ht, (void**)&value, &p);
+
+		// Lua doesn't represent most integers with absolute value over 2**53,
+		// so stringify them.
+#if SIZEOF_LONG > 4
+		if (key_type == HASH_KEY_IS_LONG &&
+				((int64_t)lkey > INT64_C(9007199254740992) || (int64_t)lkey < INT64_C(-9007199254740992))
+		) {
+			key_length = snprintf(buffer, sizeof(buffer), "%" PRId64, (int64_t)lkey);
+			lua_pushlstring(L, buffer, key_length - 1);
+		} else
+#endif
 		if (key_type == HASH_KEY_IS_STRING) {
 			lua_pushlstring(L, key, key_length - 1);
 		} else {
@@ -253,6 +269,16 @@ static int luasandbox_push_hashtable(lua_State * L, HashTable * ht, HashTable * 
 	zval *value;
 	ZEND_HASH_FOREACH_KEY_VAL(ht, lkey, key, value)
 	{
+		// Lua doesn't represent most integers with absolute value over 2**53,
+		// so stringify them.
+#if SIZEOF_LONG > 4
+		if (!key &&
+				((int64_t)lkey > INT64_C(9007199254740992) || (int64_t)lkey < INT64_C(-9007199254740992))
+		) {
+			size_t len = snprintf(buffer, sizeof(buffer), "%" PRId64, (int64_t)lkey);
+			lua_pushlstring(L, buffer, len);
+		} else
+#endif
 		if (key) {
 			lua_pushlstring(L, ZSTR_VAL(key), ZSTR_LEN(key));
 		} else {
@@ -533,6 +559,7 @@ static int luasandbox_lua_pair_to_array(HashTable *ht, lua_State *L,
 	const char * str;
 	size_t length;
 	lua_Number n;
+	zend_ulong zn;
 
 #if PHP_VERSION_ID < 70000
 	zval *value, *valp;
@@ -553,14 +580,9 @@ static int luasandbox_lua_pair_to_array(HashTable *ht, lua_State *L,
 	// Convert key, but leave it there
 	if (lua_type(L, -1) == LUA_TNUMBER) {
 		n = lua_tonumber(L, -1);
-		if (isfinite(n) && n == floor(n)) {
-			// Integer key
-#if PHP_VERSION_ID < 70000
-			zend_hash_index_update(ht, n, (void*)&value, sizeof(zval*), NULL);
-#else
-			zend_hash_index_update(ht, n, valp);
-#endif
-			return 1;
+		if (isfinite(n) && n == floor(n) && n >= LONG_MIN && n <= LONG_MAX) {
+			zn = (long)n;
+			goto add_int_key;
 		}
 	}
 
@@ -575,7 +597,31 @@ static int luasandbox_lua_pair_to_array(HashTable *ht, lua_State *L,
 		);
 		luasandbox_throw_runtimeerror(L, sandbox_zval, message TSRMLS_CC);
 		efree(message);
+		return 0;
+	}
+	lua_pop(L, 1);
 
+	// See if the string is convertable to a number
+#if PHP_VERSION_ID < 70000
+	ZEND_HANDLE_NUMERIC_EX(str, length + 1, zn, goto add_int_key);
+#else
+	if (ZEND_HANDLE_NUMERIC_STR(str, length, zn)) {
+		goto add_int_key;
+	}
+#endif
+
+	// Nope, use it as a string
+#if PHP_VERSION_ID < 70000
+	if (zend_hash_exists(ht, str, length + 1))
+#else
+	if (zend_hash_str_exists(ht, str, length))
+#endif
+	{
+		// Collision, probably the key is an integer-like string
+		char *message;
+		spprintf(&message, 0, "Collision for array key %s when passing data from Lua to PHP", str );
+		luasandbox_throw_runtimeerror(L, sandbox_zval, message TSRMLS_CC);
+		efree(message);
 		return 0;
 	}
 #if PHP_VERSION_ID < 70000
@@ -583,7 +629,24 @@ static int luasandbox_lua_pair_to_array(HashTable *ht, lua_State *L,
 #else
 	zend_hash_str_update(ht, str, length, valp);
 #endif
-	lua_pop(L, 1);
+	return 1;
+
+add_int_key:
+	if (zend_hash_index_exists(ht, zn)) {
+		// Collision, probably with a integer-like string
+		char *message;
+		spprintf(&message, 0, "Collision for array key %" PRId64 " when passing data from Lua to PHP",
+			(int64_t)zn
+		);
+		luasandbox_throw_runtimeerror(L, sandbox_zval, message TSRMLS_CC);
+		efree(message);
+		return 0;
+	}
+#if PHP_VERSION_ID < 70000
+	zend_hash_index_update(ht, zn, (void*)&value, sizeof(zval*), NULL);
+#else
+	zend_hash_index_update(ht, zn, valp);
+#endif
 	return 1;
 }
 /* }}} */
