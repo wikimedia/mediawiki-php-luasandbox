@@ -1,0 +1,26 @@
+# Doxyfile for LuaSandbox
+#
+# See <http://www.stack.nl/~dimitri/doxygen/manual/config.html>
+# for help on how to use this file to configure Doxygen.
+
+PROJECT_NAME           = "LuaSandbox"
+PROJECT_BRIEF          = "extension to run Lua 5.1 code from PHP"
+OUTPUT_DIRECTORY       = doc
+JAVADOC_AUTOBRIEF      = YES
+QT_AUTOBRIEF           = YES
+WARN_NO_PARAMDOC       = YES
+INPUT                  = README.md stubs/
+USE_MDFILE_AS_MAINPAGE = README.md
+FILE_PATTERNS          = *.php
+RECURSIVE              = YES
+HTML_DYNAMIC_SECTIONS  = YES
+GENERATE_TREEVIEW      = YES
+TREEVIEW_WIDTH         = 250
+GENERATE_LATEX         = NO
+HAVE_DOT               = YES
+DOT_FONTNAME           = Helvetica
+DOT_FONTSIZE           = 10
+TEMPLATE_RELATIONS     = YES
+CALL_GRAPH             = NO
+CALLER_GRAPH           = NO
+DOT_MULTI_TARGETS = YES
