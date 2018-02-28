@@ -22,7 +22,12 @@ function doTest( $test, $data ) {
 
 doTest( 'null', null );
 doTest( 'int', 123 );
-doTest( 'long', 17179869184 );
+if ( is_int( 17179869184 ) ) {
+	doTest( 'long', 17179869184 );
+} else {
+	// Fake it for 32-bit systems
+	printf( "%-25s %s\n", "long:", "17179869184" );
+}
 doTest( 'double', 3.125 );
 doTest( 'NAN', NAN );
 doTest( 'INF', INF );
