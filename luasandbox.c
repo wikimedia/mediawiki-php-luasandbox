@@ -256,6 +256,8 @@ PHP_MINIT_FUNCTION(luasandbox)
 		"MEM", sizeof("MEM")-1, LUA_ERRMEM);
 	zend_declare_class_constant_long(luasandboxerror_ce,
 		"ERR", sizeof("ERR")-1, LUA_ERRERR);
+	zend_declare_property_null(luasandboxerror_ce,
+		"luaTrace", sizeof("luaTrace")-1, ZEND_ACC_PUBLIC);
 
 	INIT_CLASS_ENTRY(ce, "LuaSandboxRuntimeError", luasandbox_empty_methods);
 	luasandboxruntimeerror_ce = compat_zend_register_internal_class_ex(&ce, luasandboxerror_ce);

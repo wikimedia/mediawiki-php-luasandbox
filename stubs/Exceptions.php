@@ -8,6 +8,11 @@ class LuaSandboxError extends Exception {
 	const SYNTAX = 3; // LUA_ERRSYNTAX
 	const MEM = 4; // LUA_ERRMEM
 	const ERR = 5; // LUA_ERRERR
+
+	/**
+	 * @var ?array
+	 */
+	public $luaTrace;
 }
 
 /**
