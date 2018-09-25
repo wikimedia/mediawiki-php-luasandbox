@@ -54,9 +54,9 @@ static PHP_GSHUTDOWN_FUNCTION(luasandbox);
 static int luasandbox_post_deactivate();
 static object_constructor_ret_t luasandbox_new(zend_class_entry *ce TSRMLS_DC);
 static lua_State * luasandbox_newstate(php_luasandbox_obj * intern TSRMLS_DC);
-static void luasandbox_free_storage(void *object TSRMLS_DC);
+static void luasandbox_free_storage(zend_object *object TSRMLS_DC);
 static object_constructor_ret_t luasandboxfunction_new(zend_class_entry *ce TSRMLS_DC);
-static void luasandboxfunction_free_storage(void *object TSRMLS_DC);
+static void luasandboxfunction_free_storage(zend_object *object TSRMLS_DC);
 static int luasandbox_panic(lua_State * L);
 static lua_State * luasandbox_state_from_zval(zval * this_ptr TSRMLS_DC);
 static void luasandbox_load_helper(int binary, INTERNAL_FUNCTION_PARAMETERS);
@@ -305,8 +305,10 @@ PHP_MINIT_FUNCTION(luasandbox)
 
 #if PHP_VERSION_ID >= 70000
 	memcpy(&luasandbox_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
+	luasandbox_object_handlers.offset = XtOffsetOf(php_luasandbox_obj, std);
 	luasandbox_object_handlers.free_obj = (zend_object_free_obj_t)luasandbox_free_storage;
 	memcpy(&luasandboxfunction_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
+	luasandboxfunction_object_handlers.offset = XtOffsetOf(php_luasandboxfunction_obj, std);
 	luasandboxfunction_object_handlers.free_obj = (zend_object_free_obj_t)luasandboxfunction_free_storage;
 #endif
 
@@ -380,8 +382,14 @@ static object_constructor_ret_t luasandbox_new(zend_class_entry *ce TSRMLS_DC)
 	php_luasandbox_obj * sandbox;
 
 	// Create the internal object
-	sandbox = (php_luasandbox_obj*)emalloc(sizeof(php_luasandbox_obj));
-	memset(sandbox, 0, sizeof(php_luasandbox_obj));
+#if PHP_VERSION_ID < 70000
+	sandbox = (php_luasandbox_obj*)ecalloc(1, sizeof(php_luasandbox_obj));
+#elif PHP_VERSION_ID < 70300
+	sandbox = (php_luasandbox_obj*)ecalloc(1, sizeof(php_luasandbox_obj) + zend_object_properties_size(ce));
+#else
+	sandbox = (php_luasandbox_obj*)zend_object_alloc(sizeof(php_luasandbox_obj), ce);
+#endif
+
 	zend_object_std_init(&sandbox->std, ce TSRMLS_CC);
 #if PHP_VERSION_ID > 50399
 	object_properties_init(&sandbox->std, ce);
@@ -452,9 +460,9 @@ static lua_State * luasandbox_newstate(php_luasandbox_obj * intern TSRMLS_DC)
  *
  * "Free storage" handler for LuaSandbox objects.
  */
-static void luasandbox_free_storage(void *object TSRMLS_DC)
+static void luasandbox_free_storage(zend_object *object TSRMLS_DC)
 {
-	php_luasandbox_obj * sandbox = (php_luasandbox_obj*)object;
+	php_luasandbox_obj * sandbox = php_luasandbox_fetch_object(object);
 
 	luasandbox_timer_destroy(&sandbox->timer);
 	if (sandbox->state) {
@@ -478,8 +486,14 @@ static object_constructor_ret_t luasandboxfunction_new(zend_class_entry *ce TSRM
 	php_luasandboxfunction_obj * intern;
 
 	// Create the internal object
-	intern = (php_luasandboxfunction_obj*)emalloc(sizeof(php_luasandboxfunction_obj));
-	memset(intern, 0, sizeof(php_luasandboxfunction_obj));
+#if PHP_VERSION_ID < 70000
+	intern = (php_luasandboxfunction_obj*)ecalloc(1, sizeof(php_luasandboxfunction_obj));
+#elif PHP_VERSION_ID < 70300
+	intern = (php_luasandboxfunction_obj*)ecalloc(1, sizeof(php_luasandboxfunction_obj) + zend_object_properties_size(ce));
+#else
+	intern = (php_luasandboxfunction_obj*)zend_object_alloc(sizeof(php_luasandboxfunction_obj), ce);
+#endif
+
 	zend_object_std_init(&intern->std, ce TSRMLS_CC);
 #if PHP_VERSION_ID > 50399
 	object_properties_init(&intern->std, ce);
@@ -508,9 +522,9 @@ static object_constructor_ret_t luasandboxfunction_new(zend_class_entry *ce TSRM
  * from the registry and decrements the reference counter for the parent
  * LuaSandbox object.
  */
-static void luasandboxfunction_free_storage(void *object TSRMLS_DC)
+static void luasandboxfunction_free_storage(zend_object *object TSRMLS_DC)
 {
-	php_luasandboxfunction_obj * func = (php_luasandboxfunction_obj*)object;
+	php_luasandboxfunction_obj * func = php_luasandboxfunction_fetch_object(object);
 	if (LUASANDBOXFUNCTION_SANDBOX_IS_OK(func)) {
 		zval *zsandbox = LUASANDBOXFUNCTION_GET_SANDBOX_ZVALPTR(func);
 		php_luasandbox_obj * sandbox = GET_LUASANDBOX_OBJ(zsandbox);
