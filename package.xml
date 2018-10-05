@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://pear.php.net/dtd/package-2.0" xmlns:tasks="http://pear.php.net/dtd/tasks-1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" packagerversion="1.8.0" version="2.0" xsi:schemaLocation="http://pear.php.net/dtd/tasks-1.0 http://pear.php.net/dtd/tasks-1.0.xsd http://pear.php.net/dtd/package-2.0 http://pear.php.net/dtd/package-2.0.xsd">
+  <name>LuaSandbox</name>
+  <channel>pecl.php.net</channel>
+  <summary>Lua interpreter with limits and safe environment</summary>
+  <description>LuaSandbox is an extension for running untrusted Lua code within a PHP web request. Code is run in a stripped-down, safe environment. Time and memory limits can be set.</description>
+  <lead>
+    <name>Tim Starling</name>
+    <user>tstarling</user>
+    <email>tstarling@wikimedia.org</email>
+    <active>yes</active>
+  </lead>
+  <date>2018-10-08</date>
+  <version>
+    <release>3.0.2</release>
+    <api>3.0.2</api>
+  </version>
+  <stability>
+    <release>stable</release>
+    <api>stable</api>
+  </stability>
+  <license>MIT</license>
+  <notes>
+    - Fix PHP 7 object layout
+    - Initial PECL release
+  </notes>
+  <contents>
+    <dir name="/">
+      <dir name="m4">
+        <file name="pkg.m4" role="src"/>
+      </dir>
+      <dir name="stubs">
+        <file name="Exceptions.php" role="doc"/>
+        <file name="LuaSandboxFunction.php" role="doc"/>
+        <file name="LuaSandbox.php" role="doc"/>
+      </dir>
+      <dir name="tests">
+        <file name="array-key-conversion.phpt" role="test"/>
+        <file name="callback_exception.phpt" role="test"/>
+        <file name="call.phpt" role="test"/>
+        <file name="datatypes.phpt" role="test"/>
+        <file name="datatypes-unsupported.phpt" role="test"/>
+        <file name="dump_loadBinary_call.phpt" role="test"/>
+        <file name="errors-at-call-boundaries.phpt" role="test"/>
+        <file name="extending-LuaSandbox.phpt" role="test"/>
+        <file name="ipairs.phpt" role="test"/>
+        <file name="loadString.phpt" role="test"/>
+        <file name="lua_catches_php_exception.phpt" role="test"/>
+        <file name="LuaSandboxFunction_construct.phpt" role="test"/>
+        <file name="pairs.phpt" role="test"/>
+        <file name="pcall.phpt" role="test"/>
+        <file name="profiler.phpt" role="test"/>
+        <file name="profiler-sorting.phpt" role="test"/>
+        <file name="reentrant.phpt" role="test"/>
+        <file name="timer.phpt" role="test"/>
+        <file name="xpcall.phpt" role="test"/>
+      </dir>
+      <file name="alloc.c" role="src"/>
+      <file name="config.cmake" role="src"/>
+      <file name="config.m4" role="src"/>
+      <file name="COPYING" role="doc"/>
+      <file name="CREDITS" role="doc"/>
+      <file name="data_conversion.c" role="src"/>
+      <file name="Doxyfile" role="src"/>
+      <file name="ext_luasandbox.php" role="src"/>
+      <file name="FindLua51cpp.cmake" role="src"/>
+      <file name="hhvm-test.sh" role="src"/>
+      <file name="library.c" role="src"/>
+      <file name="luasandbox.c" role="src"/>
+      <file name="luasandbox.ini" role="src"/>
+      <file name="luasandbox_lstrlib.c" role="src"/>
+      <file name="luasandbox_lstrlib.patch" role="src"/>
+      <file name="luasandbox_timer.h" role="src"/>
+      <file name="luasandbox_types.h" role="src"/>
+      <file name="luasandbox_version.h" role="src"/>
+      <file name="php_luasandbox.h" role="src"/>
+      <file name="README.md" role="doc"/>
+      <file name="timer.c" role="src"/>
+    </dir>
+  </contents>
+  <dependencies>
+    <required>
+      <php>
+        <min>5.2.0</min>
+      </php>
+      <pearinstaller>
+        <min>1.7.0</min>
+      </pearinstaller>
+    </required>
+  </dependencies>
+  <providesextension>luasandbox</providesextension>
+  <extsrcrelease/>
+</package>
