@@ -606,7 +606,7 @@ struct luasandbox_load_helper_params {
 	php_luasandbox_obj * sandbox;
 	zval *zthis;
 	zval *return_value;
-#ifdef ZTS
+#if defined(ZTS) && PHP_VERSION_ID < 70000
 	void ***tsrm_ls;
 #endif
 	char *code;
@@ -618,7 +618,7 @@ static int luasandbox_load_helper_protected(lua_State* L) {
 	struct luasandbox_load_helper_params *p = (struct luasandbox_load_helper_params *)lua_touserdata(L, 1);
 	int status;
 	zval *return_value = p->return_value;
-#ifdef ZTS
+#if defined(ZTS) && PHP_VERSION_ID < 70000
 	void ***tsrm_ls = p->tsrm_ls;
 #endif
 
@@ -695,7 +695,7 @@ static void luasandbox_load_helper(int binary, INTERNAL_FUNCTION_PARAMETERS)
 	luasandbox_timer_unpause(&p.sandbox->timer);
 
 	p.zthis = getThis();
-#ifdef ZTS
+#if defined(ZTS) && PHP_VERSION_ID < 70000
 	p.tsrm_ls = tsrm_ls;
 #endif
 	p.return_value = return_value;
@@ -768,7 +768,7 @@ PHP_METHOD(LuaSandbox, loadBinary)
 static int luasandbox_safe_trace_to_zval(lua_State* L) {
 	zval *zsandbox = (zval *)lua_touserdata(L, 2);
 	zval *ztrace = (zval *)lua_touserdata(L, 3);
-#ifdef ZTS
+#if defined(ZTS) && PHP_VERSION_ID < 70000
 	void ***tsrm_ls = (void ***)lua_touserdata(L, 4);
 #endif
 
@@ -847,7 +847,7 @@ static void luasandbox_handle_error(php_luasandbox_obj * sandbox, int status TSR
 		lua_pushlightuserdata(L, LUASANDBOX_GET_CURRENT_ZVAL_PTR(sandbox));
 		lua_pushlightuserdata(L, ztrace);
 		lua_pushlightuserdata(L,
-#ifdef ZTS
+#if defined(ZTS) && PHP_VERSION_ID < 70000
 			tsrm_ls
 #else
 			NULL
@@ -1272,7 +1272,7 @@ struct LuaSandbox_callFunction_params {
 	php_luasandbox_obj * sandbox;
 	zval *zthis;
 	zval *return_value;
-#ifdef ZTS
+#if defined(ZTS) && PHP_VERSION_ID < 70000
 	void ***tsrm_ls;
 #endif
 	char *name;
@@ -1284,7 +1284,7 @@ struct LuaSandbox_callFunction_params {
 static int LuaSandbox_callFunction_protected(lua_State* L) {
 	struct LuaSandbox_callFunction_params *p = (struct LuaSandbox_callFunction_params *)lua_touserdata(L, 1);
 	zval *return_value = p->return_value;
-#ifdef ZTS
+#if defined(ZTS) && PHP_VERSION_ID < 70000
 	void ***tsrm_ls = p->tsrm_ls;
 #endif
 
@@ -1322,7 +1322,7 @@ PHP_METHOD(LuaSandbox, callFunction)
 
 	p.zthis = getThis();
 	p.return_value = return_value;
-#ifdef ZTS
+#if defined(ZTS) && PHP_VERSION_ID < 70000
 	p.tsrm_ls = tsrm_ls;
 #endif
 	status = lua_cpcall(L, LuaSandbox_callFunction_protected, &p);
@@ -1357,7 +1357,7 @@ PHP_METHOD(LuaSandbox, callFunction)
 struct LuaSandbox_wrapPhpFunction_params {
 	zval *zthis;
 	zval *return_value;
-#ifdef ZTS
+#if defined(ZTS) && PHP_VERSION_ID < 70000
 	void ***tsrm_ls;
 #endif
 	zval *z;
@@ -1366,7 +1366,7 @@ struct LuaSandbox_wrapPhpFunction_params {
 static int LuaSandbox_wrapPhpFunction_protected(lua_State* L) {
 	struct LuaSandbox_wrapPhpFunction_params *p = (struct LuaSandbox_wrapPhpFunction_params *)lua_touserdata(L, 1);
 	zval *return_value = p->return_value;
-#ifdef ZTS
+#if defined(ZTS) && PHP_VERSION_ID < 70000
 	void ***tsrm_ls = p->tsrm_ls;
 #endif
 
@@ -1404,7 +1404,7 @@ PHP_METHOD(LuaSandbox, wrapPhpFunction)
 	}
 
 	p.return_value = return_value;
-#ifdef ZTS
+#if defined(ZTS) && PHP_VERSION_ID < 70000
 	p.tsrm_ls = tsrm_ls;
 #endif
 	status = lua_cpcall(L, LuaSandbox_wrapPhpFunction_protected, &p);
@@ -1494,7 +1494,7 @@ PHP_METHOD(LuaSandboxFunction, __construct)
 struct LuaSandboxFunction_call_params {
 	php_luasandbox_obj * sandbox;
 	zval *return_value;
-#ifdef ZTS
+#if defined(ZTS) && PHP_VERSION_ID < 70000
 	void ***tsrm_ls;
 #endif
 	php_luasandboxfunction_obj *func;
@@ -1505,7 +1505,7 @@ struct LuaSandboxFunction_call_params {
 static int LuaSandboxFunction_call_protected(lua_State* L) {
 	struct LuaSandboxFunction_call_params *p = (struct LuaSandboxFunction_call_params *)lua_touserdata(L, 1);
 	zval *return_value = p->return_value;
-#ifdef ZTS
+#if defined(ZTS) && PHP_VERSION_ID < 70000
 	void ***tsrm_ls = p->tsrm_ls;
 #endif
 
@@ -1523,7 +1523,7 @@ PHP_METHOD(LuaSandboxFunction, call)
 	int status;
 
 	p.return_value = return_value;
-#ifdef ZTS
+#if defined(ZTS) && PHP_VERSION_ID < 70000
 	p.tsrm_ls = tsrm_ls;
 #endif
 	p.numArgs = 0;
