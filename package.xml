@@ -90,14 +90,16 @@
   <providesextension>luasandbox</providesextension>
   <extsrcrelease/>
   <changelog>
-    <date>2018-10-09</date>
-    <version>
-      <release>3.0.2</release>
-      <api>3.0.2</api>
-    </version>
-    <notes>
-      - Fix PHP 7 object layout
-      - Initial PECL release
-    </notes>
+    <release>
+      <date>2018-10-09</date>
+      <version>
+        <release>3.0.2</release>
+        <api>3.0.2</api>
+      </version>
+      <notes>
+        - Fix PHP 7 object layout
+        - Initial PECL release
+      </notes>
+    </release>
   </changelog>
 </package>
