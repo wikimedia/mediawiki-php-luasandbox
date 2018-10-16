@@ -148,16 +148,16 @@ class LuaSandbox {
 	 * associative array mapping the function name (with source file and line
 	 * defined in angle brackets) to the cost.
 	 *
-	 * The measurement unit used for the cost is determined by the what
+	 * The measurement unit used for the cost is determined by the `$units`
 	 * parameter:
 	 *   - LuaSandbox::SAMPLES: Measure in number of samples
 	 *   - LuaSandbox::SECONDS: Measure in seconds of CPU time
 	 *   - LuaSandbox::PERCENT: Measure percentage of CPU time
 	 *
-	 * @param int $what Measurement unit constant.
+	 * @param int $units Measurement unit constant.
 	 * @return array Profiler measurements, sorted in descending order.
 	 */
-	public function getProfilerFunctionReport( $what = LuaSandbox::SECONDS ) {
+	public function getProfilerFunctionReport( $units = LuaSandbox::SECONDS ) {
 	}
 
 	/**

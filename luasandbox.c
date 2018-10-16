@@ -155,7 +155,6 @@ ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_callFunction, 0)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_wrapPhpFunction, 0)
-	ZEND_ARG_INFO(0, name)
 	ZEND_ARG_INFO(0, function)
 ZEND_END_ARG_INFO()
 

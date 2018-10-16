@@ -26,6 +26,48 @@
   </notes>
   <contents>
     <dir name="/">
+      <dir name="docbook">
+        <dir name="luasandbox">
+          <file name="callfunction.xml" role="doc"/>
+          <file name="disableprofiler.xml" role="doc"/>
+          <file name="enableprofiler.xml" role="doc"/>
+          <file name="getcpuusage.xml" role="doc"/>
+          <file name="getmemoryusage.xml" role="doc"/>
+          <file name="getpeakmemoryusage.xml" role="doc"/>
+          <file name="getprofilerfunctionreport.xml" role="doc"/>
+          <file name="getversioninfo.xml" role="doc"/>
+          <file name="loadbinary.xml" role="doc"/>
+          <file name="loadstring.xml" role="doc"/>
+          <file name="pauseusagetimer.xml" role="doc"/>
+          <file name="registerlibrary.xml" role="doc"/>
+          <file name="setcpulimit.xml" role="doc"/>
+          <file name="setmemorylimit.xml" role="doc"/>
+          <file name="unpauseusagetimer.xml" role="doc"/>
+          <file name="wrapphpfunction.xml" role="doc"/>
+        </dir>
+        <dir name="luasandboxfunction">
+          <file name="call.xml" role="doc"/>
+          <file name="construct.xml" role="doc"/>
+          <file name="dump.xml" role="doc"/>
+        </dir>
+        <file name="book.xml" role="doc"/>
+        <file name="configure.xml" role="doc"/>
+        <file name="constants.xml" role="doc"/>
+        <file name="differences.xml" role="doc"/>
+        <file name="examples.xml" role="doc"/>
+        <file name="luasandboxerrorerror.xml" role="doc"/>
+        <file name="luasandboxerror.xml" role="doc"/>
+        <file name="luasandboxfatalerror.xml" role="doc"/>
+        <file name="luasandboxfunction.xml" role="doc"/>
+        <file name="luasandboxmemoryerror.xml" role="doc"/>
+        <file name="luasandboxruntimeerror.xml" role="doc"/>
+        <file name="luasandboxsyntaxerror.xml" role="doc"/>
+        <file name="luasandboxtimeouterror.xml" role="doc"/>
+        <file name="luasandbox.xml" role="doc"/>
+        <file name="reference.xml" role="doc"/>
+        <file name="setup.xml" role="doc"/>
+        <file name="versions.xml" role="doc"/>
+      </dir>
       <dir name="m4">
         <file name="pkg.m4" role="src"/>
       </dir>
@@ -75,6 +117,7 @@
       <file name="luasandbox_version.h" role="src"/>
       <file name="php_luasandbox.h" role="src"/>
       <file name="README.md" role="doc"/>
+      <file name="README.Documentation" role="doc"/>
       <file name="timer.c" role="src"/>
     </dir>
   </contents>

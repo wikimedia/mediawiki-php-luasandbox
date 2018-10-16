@@ -35,3 +35,9 @@ config.sub
 
 # Doxygen output
 /doc/
+
+# Docbook generated files, just in case
+docbook/entities.*.xml
+
+# Override the "configure*" rule above
+!docbook/configure.xml

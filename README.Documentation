@@ -1,0 +1,39 @@
+This extension has documentation in three different formats. When updating
+the documentation in one place, remember to update the others as well.
+
+== On-wiki documentation ==
+
+Installation of the extension and some examples are documented at
+<https://www.mediawiki.org/wiki/LuaSandbox>.
+
+== PHPdoc style documentation ==
+
+PHP interface documentation is provided via stub class definitions in
+the stubs/ directory. These stubs may be used with IDEs that understand
+PHPdoc documentation.
+
+These stubs, along with a brief introduction in README.md, may be used
+to generate online documentation using Doxygen. It should suffice to run
+`doxygen` with no arguments.
+
+== PHP DocBook documentation ==
+
+Documentation in the DocBook format used by php.net is included in the
+docbook/ directory. The intention here is that that directory can be
+copied directly into PHP's documentation SVN repository.
+
+To generate the documentation locally:
+
+* Get the PhD docbook builder:
+   git clone http://git.php.net/repository/phd.git phd
+* Check out the PHP documentation:
+   svn co https://svn.php.net/repository/phpdoc/modules/doc-en doc-en
+* In the doc-en checkout,
+  * Copy the docbook/ directory here to en/reference/luasandbox/.
+  * Add reference to luasandbox in en/appendices/extensions.xml and
+    doc-base/manual.xml.in. Search for "lua" in each file to find the
+    places and copy the syntax.
+  * Build the manual (two commands):
+     php doc-base/configure.php --enable-xml-details
+     php ../phd/render.php --docbook doc-base/.manual.xml --package PHP --format xhtml
+  * Open output/php-chunked-xhtml/book.luasandbox.html in your browser.
