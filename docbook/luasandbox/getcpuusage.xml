@@ -17,7 +17,7 @@
    Fetches the current CPU time usage of the Lua environment.
   </para>
   <para>
-   This includes time spend in PHP callbacks.
+   This includes time spent in PHP callbacks.
   </para>
 
  </refsect1>
@@ -32,6 +32,14 @@
   <para>
    Returns the current CPU time usage in seconds.
   </para>
+  <note>
+   <para>
+    On Windows, this function always returns zero. On operating systems that do
+    not support <constant>CLOCK_THREAD_CPUTIME_ID</constant>, such as FreeBSD
+    and Mac OS X, this function will return the elapsed wall-clock time, not
+    CPU time.
+   </para>
+  </note>
  </refsect1>
 
  <refsect1 role="seealso">

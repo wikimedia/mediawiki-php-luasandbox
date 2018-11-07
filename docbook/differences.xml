@@ -89,6 +89,11 @@
     </listitem>
     <listitem>
      <para>
+      <literal>string.match()</literal> has been patched to limit the recursion depth and to periodically check for a timeout.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
       <literal>math.random()</literal> and <literal>math.randomseed()</literal> are replaced with versions that don't share state with PHP's <literal>rand()</literal>.
      </para>
     </listitem>

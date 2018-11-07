@@ -7,7 +7,20 @@
  <section xml:id="luasandbox.requirements">
   &reftitle.required;
   <para>
-   To use this extension, you will need Lua 5.1 installed, available on the <link xlink:href="&url.lua;">Lua homepage</link>
+   To use this extension, Lua 5.1 will need to be installed, available on the <link xlink:href="&url.lua;">Lua homepage</link>.
+  </para>
+  <para>
+   To make full use of the timer features, LuaSandbox should be installed on
+   Linux.
+  </para>
+  <para>
+   If FreeBSD or Mac OS X is used, only real (wall-clock) time is
+   supported, the functions purporting to return CPU time will actually return
+   wall clock time.
+  </para>
+  <para>
+   If Windows is used, no timer functions will be supported. The time limits
+   will be inoperable.
   </para>
  </section>
 
@@ -19,6 +32,25 @@
   <para>
    &pecl.info;
    <link xlink:href="&url.pecl.package;luasandbox">&url.pecl.package;luasandbox</link>.
+  </para>
+  <para>
+   If the operating system is Debian 9 or later, or Ubuntu 18.04 or later, then
+   LuaSandbox should typically be installed from the package
+   <literal>php-luasandbox</literal>:
+   <screen>
+<![CDATA[
+sudo apt-get install php-luasandbox
+]]>
+   </screen>
+  </para>
+  <para>
+   Debian 9 users may need to add
+   <screen>
+<![CDATA[
+deb http://ftp.debian.org/debian stretch-backports main
+]]>
+   </screen>
+   to their sources.list.
   </para>
  </section>
 

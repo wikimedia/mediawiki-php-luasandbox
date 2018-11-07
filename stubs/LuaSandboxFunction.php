@@ -35,7 +35,7 @@ class LuaSandboxFunction {
 	 *    - Note that Lua typically indexes arrays from 1, while PHP indexes
 	 *      arrays from 0. No adjustment is made for these differing
 	 *      conventions.
-	 *    - Self-referenial arrays are not supported in either direction.
+	 *    - Self-referential arrays are not supported in either direction.
 	 *    - PHP references are dereferenced.
 	 *    - Lua `__pairs` and `__ipairs` are processed. `__index` is ignored.
 	 *    - When converting from PHP to Lua, integer keys between -2**53 and

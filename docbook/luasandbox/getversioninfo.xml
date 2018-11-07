@@ -27,7 +27,28 @@
  <refsect1 role="returnvalues">
   &reftitle.returnvalues;
   <para>
-   An <type>array</type> with two keys. <literal>LuaSandbox</literal> is the version of the LuaSandbox extension, and <literal>Lua</literal> is the version of Lua.
+   Returns an array with two keys:
+  </para>
+  <para>
+   <informaltable>
+    <tgroup cols="3">
+     <thead>
+      <row><entry>element</entry><entry>type</entry><entry>description</entry></row>
+     </thead>
+     <tbody>
+      <row>
+       <entry>LuaSandbox</entry>
+       <entry><type>string</type></entry>
+       <entry>The version of the LuaSandbox extension.</entry>
+      </row>
+      <row>
+       <entry>Lua</entry>
+       <entry><type>string</type></entry>
+       <entry>The library name and version as defined by the LUA_RELEASE macro, for example, "Lua 5.1.5".</entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </informaltable>
   </para>
  </refsect1>
 

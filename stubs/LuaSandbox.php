@@ -88,7 +88,7 @@ class LuaSandbox {
 	/**
 	 * Fetch the current CPU time usage of the Lua environment.
 	 *
-	 * This includes time spend in PHP callbacks.
+	 * This includes time spent in PHP callbacks.
 	 *
 	 * @return float Current CPU time usage in seconds.
 	 */

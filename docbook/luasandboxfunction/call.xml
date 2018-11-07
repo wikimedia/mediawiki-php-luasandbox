@@ -70,7 +70,7 @@
         </para>
        </listitem>
        <listitem>
-        <para>Self-referenial arrays are not supported in either direction.</para>
+        <para>Self-referential arrays are not supported in either direction.</para>
        </listitem>
        <listitem>
         <para>PHP references are dereferenced.</para>

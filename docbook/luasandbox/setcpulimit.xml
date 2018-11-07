@@ -28,6 +28,13 @@
    Setting the time limit from a callback while Lua is running causes the
    timer to be reset, or started if it was not already running.
   </para>
+  <note>
+   <para>
+    On Windows, the CPU limit will be ignored. On operating systems that do
+    not support <constant>CLOCK_THREAD_CPUTIME_ID</constant>, such as FreeBSD
+    and Mac OS X, wall-clock time rather than CPU time will be limited.
+   </para>
+  </note>
  </refsect1>
 
  <refsect1 role="parameters">

@@ -14,7 +14,7 @@
    <void />
   </methodsynopsis>
   <para>
-   Fetched the current memory usage of the Lua environment.
+   Fetches the current memory usage of the Lua environment.
   </para>
 
  </refsect1>

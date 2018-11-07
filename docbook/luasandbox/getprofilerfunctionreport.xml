@@ -62,6 +62,14 @@
    defined in angle brackets), values are the measurements as <type>integer</type>
    or <type>float</type>.
   </para>
+  <note>
+   <para>
+    On Windows, this function always returns an empty array. On operating systems that do
+    not support <constant>CLOCK_THREAD_CPUTIME_ID</constant>, such as FreeBSD
+    and Mac OS X, this function will report the elapsed wall-clock time, not
+    CPU time.
+   </para>
+  </note>
  </refsect1>
 
  <refsect1 role="examples">
