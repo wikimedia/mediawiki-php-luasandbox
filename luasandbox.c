@@ -105,12 +105,12 @@ static zend_object_handlers luasandboxfunction_object_handlers;
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_getVersionInfo, 0)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_loadString, 0)
+ZEND_BEGIN_ARG_INFO_EX(arginfo_luasandbox_loadString, 0, 0, 1)
 	ZEND_ARG_INFO(0, code)
 	ZEND_ARG_INFO(0, chunkName)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_loadBinary, 0)
+ZEND_BEGIN_ARG_INFO_EX(arginfo_luasandbox_loadBinary, 0, 0, 1)
 	ZEND_ARG_INFO(0, code)
 	ZEND_ARG_INFO(0, chunkName)
 ZEND_END_ARG_INFO()
@@ -138,20 +138,24 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_unpauseUsageTimer, 0)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_enableProfiler, 0)
+ZEND_BEGIN_ARG_INFO_EX(arginfo_luasandbox_enableProfiler, 0, 0, 0)
 	ZEND_ARG_INFO(0, period)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_disableProfiler, 0)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_getProfilerFunctionReport, 0)
+ZEND_BEGIN_ARG_INFO_EX(arginfo_luasandbox_getProfilerFunctionReport, 0, 0, 0)
 	ZEND_ARG_INFO(0, units)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_callFunction, 0)
+ZEND_BEGIN_ARG_INFO_EX(arginfo_luasandbox_callFunction, 0, 0, 1)
 	ZEND_ARG_INFO(0, name)
+#ifdef ZEND_ARG_VARIADIC_INFO
+	ZEND_ARG_VARIADIC_INFO(0, args)
+#else
 	ZEND_ARG_INFO(0, ...)
+#endif
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_wrapPhpFunction, 0)
@@ -166,8 +170,12 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_INFO(arginfo_luasandboxfunction___construct, 0)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_INFO(arginfo_luasandboxfunction_call, 0)
+ZEND_BEGIN_ARG_INFO_EX(arginfo_luasandboxfunction_call, 0, 0, 0)
+#ifdef ZEND_ARG_VARIADIC_INFO
+	ZEND_ARG_VARIADIC_INFO(0, args)
+#else
 	ZEND_ARG_INFO(0, ...)
+#endif
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO(arginfo_luasandboxfunction_dump, 0)
@@ -726,7 +734,7 @@ PHP_METHOD(LuaSandbox, getVersionInfo)
 
 /* }}} */
 
-/** {{{ proto LuaSandboxFunction LuaSandbox::loadString(string code, string chunkName)
+/** {{{ proto LuaSandboxFunction LuaSandbox::loadString(string code, string chunkName = '')
  *
  * Load a string into the LuaSandbox object. Returns a LuaSandboxFunction object
  * which can be called or dumped.
@@ -742,7 +750,7 @@ PHP_METHOD(LuaSandbox, loadString)
 
 /* }}} */
 
-/** {{{ proto LuaSandboxFunction LuaSandbox::loadBinary(string bin, string chunkName)
+/** {{{ proto LuaSandboxFunction LuaSandbox::loadBinary(string bin, string chunkName = '')
  * Load a string containing a precompiled binary chunk from
  * LuaSandboxFunction::dump() or the Lua compiler luac. Returns a
  * LuaSandboxFunction object.
@@ -1248,7 +1256,7 @@ PHP_METHOD(LuaSandbox, getPeakMemoryUsage)
 }
 /* }}} */
 
-/** {{{ proto array LuaSandbox::callFunction(string name, ...)
+/** {{{ proto array LuaSandbox::callFunction(string name, ...$args )
  *
  * Call a function in the global variable with the given name. The name may
  * contain "." characters, in which case the function is located via recursive
@@ -1471,7 +1479,7 @@ PHP_METHOD(LuaSandboxFunction, __construct)
 }
 /* }}} */
 
-/** {{{ proto array LuaSandboxFunction::call(...)
+/** {{{ proto array LuaSandboxFunction::call( ...$args )
  *
  * Call a LuaSandboxFunction. The arguments to this function are passed through
  * to Lua.
