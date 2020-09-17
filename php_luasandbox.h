@@ -8,10 +8,10 @@
 #include "luasandbox_types.h"
 #include "luasandbox_timer.h"
 
-/* alloc.c */
-
 #define PHP_LUASANDBOX_INI_ALLOWED_GLOBALS "luasandbox.allowed_globals"
+#define PHP_LUASANDBOX_INI_ADDITIONAL_LIBRARIES "luasandbox.additional_libraries"
 
+/* alloc.c */
 lua_State * luasandbox_alloc_new_state(php_luasandbox_alloc * alloc, php_luasandbox_obj * sandbox);
 void luasandbox_alloc_delete_state(php_luasandbox_alloc * alloc, lua_State * L);
 
@@ -63,7 +63,7 @@ PHP_METHOD(LuaSandbox, callFunction);
 PHP_METHOD(LuaSandbox, wrapPhpFunction);
 PHP_METHOD(LuaSandbox, registerLibrary);
 PHP_METHOD(LuaSandbox, allowedGlobals);
-
+PHP_METHOD(LuaSandbox, additionalLibraries);
 PHP_METHOD(LuaSandboxFunction, __construct);
 PHP_METHOD(LuaSandboxFunction, call);
 PHP_METHOD(LuaSandboxFunction, dump);

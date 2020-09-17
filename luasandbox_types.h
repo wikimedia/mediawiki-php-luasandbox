@@ -61,6 +61,8 @@ typedef struct {
 ZEND_BEGIN_MODULE_GLOBALS(luasandbox)
 	/* Stored as a value rather than a pointer to avoid segfaults. Inspired by https://github.com/php/php-src/blob/master/ext/pcre/php_pcre.c.*/
 	HashTable allowed_globals;
+	/* A table of additional Lua C libraries. */
+	HashTable additional_libraries;
 	long active_count;
 ZEND_END_MODULE_GLOBALS(luasandbox)
 

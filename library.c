@@ -58,7 +58,6 @@ static zend_bool global_allowed( zend_string * global TSRMLS_DC) {
 #else
 	return zend_hash_exists( &LUASANDBOX_G(allowed_globals), global );
 #endif
-	return 1;
 }
 /* }}} */
 
@@ -95,6 +94,7 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 	// Remove any globals that aren't in a whitelist. This is mostly to remove
 	// unsafe functions from the base library.
 	lua_pushnil(L);
+	zend_string * global;
 	while (lua_next(L, LUA_GLOBALSINDEX) != 0) {
 		const char * key;
 		size_t key_len;
