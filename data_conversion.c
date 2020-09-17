@@ -591,6 +591,7 @@ static int luasandbox_lua_pair_to_array(HashTable *ht, lua_State *L,
 	str = lua_tolstring(L, -1, &length);
 	if ( str == NULL ) {
 		// Only strings and integers may be used as keys
+		zval_ptr_dtor(&value);
 		char *message;
 		spprintf(&message, 0, "Cannot use %s as an array key when passing data from Lua to PHP",
 			lua_typename(L, lua_type(L, -2))
@@ -619,6 +620,7 @@ static int luasandbox_lua_pair_to_array(HashTable *ht, lua_State *L,
 #endif
 	{
 		// Collision, probably the key is an integer-like string
+		zval_ptr_dtor(&value);
 		char *message;
 		spprintf(&message, 0, "Collision for array key %s when passing data from Lua to PHP", str );
 		zval_ptr_dtor(&value);
@@ -636,6 +638,7 @@ static int luasandbox_lua_pair_to_array(HashTable *ht, lua_State *L,
 add_int_key:
 	if (zend_hash_index_exists(ht, zn)) {
 		// Collision, probably with a integer-like string
+		zval_ptr_dtor(&value);
 		char *message;
 		spprintf(&message, 0, "Collision for array key %" PRId64 " when passing data from Lua to PHP",
 			(int64_t)zn
