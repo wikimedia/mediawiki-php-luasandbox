@@ -21,7 +21,6 @@
 #endif
 
 static void luasandbox_lib_filter_table(lua_State * L, char ** member_names);
-static HashTable * luasandbox_lib_get_allowed_globals(TSRMLS_D);
 
 static int luasandbox_base_tostring(lua_State * L);
 static int luasandbox_math_random(lua_State * L);
@@ -34,54 +33,6 @@ static int luasandbox_os_clock(lua_State * L);
 static int luasandbox_base_pairs(lua_State *L);
 static int luasandbox_base_ipairs(lua_State *L);
 #endif
-
-/**
- * Allowed global variables. Omissions are:
- *   * pcall, xpcall: We have our own versions which don't allow interception of
- *     timeout etc. errors.
- *   * loadfile: insecure.
- *   * load, loadstring: Probably creates a protected environment so has
- *     the same problem as pcall. Also omitting these makes analysis of the
- *     code for runtime etc. feasible.
- *   * print: Not compatible with a sandbox environment
- *   * tostring: Provides addresses of tables and functions, which provides an
- *     easy ASLR workaround or heap address discovery mechanism for a memory
- *     corruption exploit. We have our own version.
- *   * Any new or undocumented functions like newproxy.
- *   * package: cpath, loadlib etc. are insecure.
- *   * coroutine: Not useful for our application so unreviewed at present.
- *   * io, file, os: insecure
- *   * debug: Provides various ways to break the sandbox, such as setupvalue()
- *     and getregistry().
- */
-char * luasandbox_allowed_globals[] = {
-	// base
-	"assert",
-	"error",
-	"getfenv",
-	"getmetatable",
-	"ipairs",
-	"next",
-	"pairs",
-	"rawequal",
-	"rawget",
-	"rawset",
-	"select",
-	"setfenv",
-	"setmetatable",
-	"tonumber",
-	"type",
-	"unpack",
-	"_G",
-	"_VERSION",
-	// libs
-	"string",
-	"table",
-	"math",
-	"os",
-	"debug",
-	NULL
-};
 
 char * luasandbox_allowed_os_members[] = {
 	"date",
@@ -98,6 +49,18 @@ char * luasandbox_allowed_debug_members[] = {
 
 
 ZEND_EXTERN_MODULE_GLOBALS(luasandbox);
+
+/** {{{ global_allowed
+ */
+static zend_bool global_allowed( zend_string * global TSRMLS_DC) {
+#if PHP_VERSION_ID < 70000
+	return zend_hash_exists( &LUASANDBOX_G(allowed_globals), ZSTR_VAL(global) );
+#else
+	return zend_hash_exists( &LUASANDBOX_G(allowed_globals), global );
+#endif
+	return 1;
+}
+/* }}} */
 
 /** {{{  luasandbox_lib_register
  */
@@ -140,16 +103,14 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 			continue;
 		}
 		key = lua_tolstring(L, -1, &key_len);
-#if PHP_VERSION_ID < 70000
-		if (!zend_hash_exists(luasandbox_lib_get_allowed_globals(TSRMLS_C), (char*)key, key_len + 1))
-#else
-		if (!zend_hash_str_exists(luasandbox_lib_get_allowed_globals(TSRMLS_C), key, key_len))
-#endif
-		{
+		zend_string * global;
+		global = zend_string_init( key, key_len, 0 );
+		if ( !global_allowed( global TSRMLS_CC ) ) {
 			// Not allowed, delete it
 			lua_pushnil(L);
 			lua_setglobal(L, key);
 		}
+		zend_string_release( global );
 	}
 
 	// Install our own versions of tostring, pcall, xpcall
@@ -211,53 +172,6 @@ static void luasandbox_lib_filter_table(lua_State * L, char ** member_names)
 		lua_setfield(L, si+1, member_names[i]);
 	}
 	lua_replace(L, si);
-}
-/* }}} */
-
-/** {{{ luasandbox_lib_destroy_globals */
-void luasandbox_lib_destroy_globals(TSRMLS_D)
-{
-	if (LUASANDBOX_G(allowed_globals)) {
-		zend_hash_destroy(LUASANDBOX_G(allowed_globals));
-		FREE_HASHTABLE(LUASANDBOX_G(allowed_globals));
-		LUASANDBOX_G(allowed_globals) = NULL;
-	}
-}
-/* }}} */
-
-/** {{{ luasandbox_lib_get_allowed_globals
- *
- * Get a HashTable of allowed global variables
- */
-static HashTable * luasandbox_lib_get_allowed_globals(TSRMLS_D)
-{
-	int i, n;
-	if (LUASANDBOX_G(allowed_globals)) {
-		return LUASANDBOX_G(allowed_globals);
-	}
-
-	for (n = 0; luasandbox_allowed_globals[n]; n++);
-
-	ALLOC_HASHTABLE(LUASANDBOX_G(allowed_globals));
-	zend_hash_init(LUASANDBOX_G(allowed_globals), n, NULL, NULL, 0);
-
-#if PHP_VERSION_ID >= 70000
-	zval zv;
-	ZVAL_TRUE(&zv);
-#endif
-
-	for (i = 0; luasandbox_allowed_globals[i]; i++) {
-#if PHP_VERSION_ID < 70000
-		zend_hash_update(LUASANDBOX_G(allowed_globals),
-			luasandbox_allowed_globals[i], strlen(luasandbox_allowed_globals[i]) + 1,
-			(void*)"", 1, NULL);
-#else
-		zend_hash_str_update(LUASANDBOX_G(allowed_globals),
-			luasandbox_allowed_globals[i], strlen(luasandbox_allowed_globals[i]), &zv);
-#endif
-	}
-
-	return LUASANDBOX_G(allowed_globals);
 }
 /* }}} */
 
