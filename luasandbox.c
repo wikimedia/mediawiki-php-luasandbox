@@ -18,6 +18,7 @@
 #include "ext/standard/php_smart_str.h"
 #else
 #include "zend_smart_str.h"
+#include "ext/standard/php_string.h"
 #endif
 #include "luasandbox_version.h"
 
@@ -51,7 +52,6 @@ typedef zval* star_param_t;
 
 static PHP_GINIT_FUNCTION(luasandbox);
 static PHP_GSHUTDOWN_FUNCTION(luasandbox);
-static int luasandbox_post_deactivate();
 static object_constructor_ret_t luasandbox_new(zend_class_entry *ce TSRMLS_DC);
 static lua_State * luasandbox_newstate(php_luasandbox_obj * intern TSRMLS_DC);
 static void luasandbox_free_storage(zend_object *object TSRMLS_DC);
@@ -103,6 +103,9 @@ static zend_object_handlers luasandboxfunction_object_handlers;
 
 /** {{{ arginfo */
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_getVersionInfo, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_allowedGlobals, 0)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_luasandbox_loadString, 0, 0, 1)
@@ -190,6 +193,7 @@ const zend_function_entry luasandbox_functions[] = {
 
 const zend_function_entry luasandbox_methods[] = {
 	PHP_ME(LuaSandbox, getVersionInfo, arginfo_luasandbox_getVersionInfo, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
+	PHP_ME(LuaSandbox, allowedGlobals, arginfo_luasandbox_allowedGlobals, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
 	PHP_ME(LuaSandbox, loadString, arginfo_luasandbox_loadString, 0)
 	PHP_ME(LuaSandbox, loadBinary, arginfo_luasandbox_loadBinary, 0)
 	PHP_ME(LuaSandbox, setMemoryLimit, arginfo_luasandbox_setMemoryLimit, 0)
@@ -245,7 +249,7 @@ zend_module_entry luasandbox_module_entry = {
 	PHP_MODULE_GLOBALS(luasandbox),
 	PHP_GINIT(luasandbox),
 	PHP_GSHUTDOWN(luasandbox),
-	luasandbox_post_deactivate,
+	NULL, /* luasandbox_post_deactivate */
 	STANDARD_MODULE_PROPERTIES_EX
 };
 /* }}} */
@@ -254,17 +258,114 @@ zend_module_entry luasandbox_module_entry = {
 ZEND_GET_MODULE(luasandbox)
 #endif
 
+/* php.ini: luasandbox.allowed_globals. */
+/* {{{ register_allowed_globals
+ */
+static void register_allowed_globals( HashTable *table, const char *list TSRMLS_DC) {
+	if ( table->nNumOfElements ) {
+		/* Clean up old values, if any. */
+		zend_hash_destroy( table );
+	}
+	/* Count the allowed globals to initialise the hashtable once and fo all .*/
+	/* Inspired by https://stackoverflow.com/a/9210560. */
+	size_t count = 0;
+	char delim = ',';
+	/* Count how many elements will be extracted. */
+	const char* tmp1 = list;
+	while (*tmp1) {
+		if (delim == *tmp1++) {
+			count++;
+		}
+	}
+	/* And one for the element after the last comma. */
+	count++;
+	zend_hash_init( table, count, NULL, NULL, 1 );
+
+	/* Inspired by https://github.com/GoogleCloudPlatform/stackdriver-debugger-php-extension/blob/master/stackdriver_debugger_ast.c */
+	char *key = NULL, *last = NULL;
+	int len = strlen( list );
+	/* list needs to be duplicated, because php_strtok_r is destructive. */
+	char *tmp2 = estrndup( list, len );
+	for (key = php_strtok_r( tmp2, ",", &last); key; key = php_strtok_r( NULL, ",", &last ) ) {
+		zend_string * key_z = zend_string_init( key, strlen( key ), 0 );
+		char * trimmed = ZSTR_VAL(php_trim( key_z, NULL, 0, 3 ));
+		zend_string_release( key_z );
+#if PHP_VERSION_ID < 70000
+		zend_hash_update(table,	trimmed, strlen( trimmed ) + 1,	(void*)"", 1, NULL);
+#else
+		zend_hash_str_add_empty_element( table, trimmed, strlen( trimmed ) );
+#endif
+	}
+	efree( tmp2 );
+}
+/* }}} */
+
+/* {{{ PHP_INI_MH
+ */
+static PHP_INI_MH(luasandbox_update_allowed_globals) {
+
+    if ( new_value != NULL ) {
+
+		/* Cast new value from php.ini or ini_set() to *char, if necessary. */
+		zend_string * list;
+#if PHP_VERSION_ID < 70000
+		list = zend_string_init( new_value, strlen( new_value ), 0 );
+#else
+		list = new_value;
+#endif
+
+		/* Fill up the hashtable . */
+		/* Leave this until php_explode() stops segfaulting.
+		zval * exploded;
+		 array_init( exploded );
+		exploded = php_explode( delim, list, exploded, ZEND_LONG_MAX );
+		LUASANDBOX_G(allowed_globals) = *Z_ARRVAL_P(exploded);
+		*/
+		register_allowed_globals( &LUASANDBOX_G(allowed_globals), ZSTR_VAL(new_value) TSRMLS_CC );
+
+		return SUCCESS;
+	}
+}
+/* }}} */
+
+PHP_INI_BEGIN()
+/**
+ * Allowed global variables. Omissions are:
+ *   * pcall, xpcall: We have our own versions which don't allow interception of
+ *     timeout etc. errors.
+ *   * loadfile: insecure.
+ *   * load, loadstring: Probably creates a protected environment so has
+ *     the same problem as pcall. Also omitting these makes analysis of the
+ *     code for runtime etc. feasible.
+ *   * print: Not compatible with a sandbox environment
+ *   * tostring: Provides addresses of tables and functions, which provides an
+ *     easy ASLR workaround or heap address discovery mechanism for a memory
+ *     corruption exploit. We have our own version.
+ *   * Any new or undocumented functions like newproxy.
+ *   * package: cpath, loadlib etc. are insecure.
+ *   * coroutine: Not useful for our application so unreviewed at present.
+ *   * io, file, os: insecure
+ *   * debug: Provides various ways to break the sandbox, such as setupvalue()
+ *     and getregistry().
+ */
+	PHP_INI_ENTRY(
+		PHP_LUASANDBOX_INI_ALLOWED_GLOBALS,	"assert,error,getfenv,getmetatable,ipairs,next,pairs,rawequal,rawget,rawset,select,setfenv,setmetatable,tonumber,type,unpack,_G,_VERSION,string,table,math,os,debug",
+		PHP_INI_SYSTEM,
+		luasandbox_update_allowed_globals
+	)
+PHP_INI_END()
+
 /* {{{ PHP_MINIT_FUNCTION
  */
 PHP_MINIT_FUNCTION(luasandbox)
 {
-	/* If you have INI entries, uncomment these lines
+	/* php.ini settings. */
 	REGISTER_INI_ENTRIES();
-	*/
 
 	zend_class_entry ce;
 	INIT_CLASS_ENTRY(ce, "LuaSandbox", luasandbox_methods);
 	luasandbox_ce = zend_register_internal_class(&ce TSRMLS_CC);
+
 	luasandbox_ce->create_object = luasandbox_new;
 	zend_declare_class_constant_long(luasandbox_ce,
 		"SAMPLES", sizeof("SAMPLES")-1, LUASANDBOX_SAMPLES TSRMLS_CC);
@@ -343,6 +444,8 @@ static PHP_GSHUTDOWN_FUNCTION(luasandbox)
 PHP_MSHUTDOWN_FUNCTION(luasandbox)
 {
 	luasandbox_timer_mshutdown(TSRMLS_C);
+	zend_hash_destroy( &LUASANDBOX_G(allowed_globals) );	
+	UNREGISTER_INI_ENTRIES();
 	return SUCCESS;
 }
 /* }}} */
@@ -358,17 +461,9 @@ PHP_RSHUTDOWN_FUNCTION(luasandbox)
 		LUASANDBOX_G(active_count) = 0;
 	}
 #endif
-	return SUCCESS;
-}
-/* }}} */
 
-static int luasandbox_post_deactivate() /* {{{ */
-{
-	TSRMLS_FETCH();
-	luasandbox_lib_destroy_globals(TSRMLS_C);
 	return SUCCESS;
 }
-/* }}} */
 
 /* {{{ PHP_MINFO_FUNCTION
  */
@@ -396,7 +491,6 @@ static object_constructor_ret_t luasandbox_new(zend_class_entry *ce TSRMLS_DC)
 #else
 	sandbox = (php_luasandbox_obj*)zend_object_alloc(sizeof(php_luasandbox_obj), ce);
 #endif
-
 	zend_object_std_init(&sandbox->std, ce TSRMLS_CC);
 #if PHP_VERSION_ID > 50399
 	object_properties_init(&sandbox->std, ce);
@@ -423,6 +517,7 @@ static object_constructor_ret_t luasandbox_new(zend_class_entry *ce TSRMLS_DC)
 	return retval;
 #else
 	sandbox->std.handlers = &luasandbox_object_handlers;
+
 	LUASANDBOX_G(active_count)++;
 	return &sandbox->std;
 #endif
@@ -436,6 +531,7 @@ static object_constructor_ret_t luasandbox_new(zend_class_entry *ce TSRMLS_DC)
  */
 static lua_State * luasandbox_newstate(php_luasandbox_obj * intern TSRMLS_DC)
 {
+
 	lua_State * L = luasandbox_alloc_new_state(&intern->alloc, intern);
 
 	if (L == NULL) {
@@ -1929,6 +2025,26 @@ PHP_METHOD(LuaSandbox, registerLibrary)
 	if (status != 0) {
 		luasandbox_handle_error(GET_LUASANDBOX_OBJ(getThis()), status TSRMLS_CC);
 		RETVAL_FALSE;
+	}
+}
+/** {{{ LuaSandbox::allowedGlobals
+ */
+PHP_METHOD(LuaSandbox, allowedGlobals) {
+	HashTable * globals = &LUASANDBOX_G(allowed_globals);
+	#if PHP_VERSION_ID < 70000
+	MAKE_STD_ZVAL(return_value);
+#endif
+	if ( globals && globals->nNumOfElements ) {
+		array_init_size( return_value, globals->nNumOfElements );
+		zend_string * key;
+		ZEND_HASH_FOREACH_STR_KEY(globals, key)
+			add_next_index_stringl( return_value, ZSTR_VAL(key), ZSTR_LEN(key) );
+		ZEND_HASH_FOREACH_END();
+	} else {
+		array_init_size(return_value, 1);
+		char *msg;
+		php_sprintf( msg, "No globals are allowed. Set %s in php.ini\n", PHP_LUASANDBOX_INI_ALLOWED_GLOBALS );
+		add_next_index_string( return_value, msg );
 	}
 }
 /* }}} */

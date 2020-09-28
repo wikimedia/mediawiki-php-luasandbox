@@ -59,7 +59,8 @@ typedef struct {
 #endif /*CLOCK_REALTIME*/
 
 ZEND_BEGIN_MODULE_GLOBALS(luasandbox)
-	HashTable * allowed_globals;
+	/* Stored as a value rather than a pointer to avoid segfaults. Inspired by https://github.com/php/php-src/blob/master/ext/pcre/php_pcre.c.*/
+	HashTable allowed_globals;
 	long active_count;
 ZEND_END_MODULE_GLOBALS(luasandbox)
 
@@ -145,4 +146,3 @@ static inline php_luasandboxfunction_obj *php_luasandboxfunction_fetch_object(ze
 #endif
 
 #endif /*LUASANDBOX_TYPES_H*/
-

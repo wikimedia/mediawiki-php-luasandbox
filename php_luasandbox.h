@@ -1,4 +1,3 @@
-
 #ifndef PHP_LUASANDBOX_H
 #define PHP_LUASANDBOX_H
 
@@ -11,6 +10,7 @@
 
 /* alloc.c */
 
+#define PHP_LUASANDBOX_INI_ALLOWED_GLOBALS "luasandbox.allowed_globals"
 
 lua_State * luasandbox_alloc_new_state(php_luasandbox_alloc * alloc, php_luasandbox_obj * sandbox);
 void luasandbox_alloc_delete_state(php_luasandbox_alloc * alloc, lua_State * L);
@@ -62,6 +62,7 @@ PHP_METHOD(LuaSandbox, getProfilerFunctionReport);
 PHP_METHOD(LuaSandbox, callFunction);
 PHP_METHOD(LuaSandbox, wrapPhpFunction);
 PHP_METHOD(LuaSandbox, registerLibrary);
+PHP_METHOD(LuaSandbox, allowedGlobals);
 
 PHP_METHOD(LuaSandboxFunction, __construct);
 PHP_METHOD(LuaSandboxFunction, call);
@@ -142,4 +143,3 @@ int luasandbox_attach_trace(lua_State * L);
 void luasandbox_push_structured_trace(lua_State * L, int level);
 
 #endif	/* PHP_LUASANDBOX_H */
-
