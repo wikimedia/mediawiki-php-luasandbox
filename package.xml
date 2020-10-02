@@ -3,17 +3,17 @@
   <name>LuaSandbox</name>
   <channel>pecl.php.net</channel>
   <summary>Lua interpreter with limits and safe environment</summary>
-  <description>LuaSandbox is an extension for running untrusted Lua code within a PHP web request. Code is run in a stripped-down, safe environment. Time and memory limits can be set.</description>
+  <description>LuaSandbox is an extension for running untrusted Lua code within a PHP web request. Code is run in a stripped-down, safe environment. Time and memory limits can be set. This is a fork created for traditio.wiki</description>
   <lead>
-    <name>Tim Starling</name>
-    <user>tstarling</user>
-    <email>tstarling@wikimedia.org</email>
+    <name>Alexander Mashin</name>
+    <user>mashin</user>
+    <email>alex.mashin@gmail.com</email>
     <active>yes</active>
   </lead>
-  <date>2018-10-11</date>
+  <date>2020-10-02</date>
   <version>
-    <release>3.0.3</release>
-    <api>3.0.3</api>
+    <release>3.1.0</release>
+    <api>3.1.0</api>
   </version>
   <stability>
     <release>stable</release>
@@ -21,7 +21,8 @@
   </stability>
   <license>MIT</license>
   <notes>
-    - Fix ZTS build on PHP 7+ (Patch by Remi Collet)
+    - Add luasandbox.allowed_globals to php.ini and LuaSandbox::allowedGlobals() method
+    - Add luasandbox.additional_libraries to php.ini and LuaSandbox::additionalLibraries() method
   </notes>
   <contents>
     <dir name="/">
@@ -51,6 +52,7 @@
         </dir>
         <file name="book.xml" role="doc"/>
         <file name="configure.xml" role="doc"/>
+        <file name="ini.xml" role="doc"/>
         <file name="constants.xml" role="doc"/>
         <file name="differences.xml" role="doc"/>
         <file name="examples.xml" role="doc"/>
@@ -134,14 +136,14 @@
   <extsrcrelease/>
   <changelog>
     <release>
-      <date>2018-10-09</date>
+      <date>2020-10-02</date>
       <version>
-        <release>3.0.2</release>
-        <api>3.0.2</api>
+        <release>3.1.0</release>
+        <api>3.1.0</api>
       </version>
       <notes>
-        - Fix PHP 7 object layout
-        - Initial PECL release
+	    - Add luasandbox.allowed_globals to php.ini and LuaSandbox::allowedGlobals() method
+	    - Add luasandbox.additional_libraries to php.ini and LuaSandbox::additionalLibraries() method
       </notes>
     </release>
   </changelog>

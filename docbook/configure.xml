@@ -5,8 +5,8 @@
  &reftitle.install;
 
  <para>
-  &pecl.info;
-  <link xlink:href="&url.pecl.package;luasandbox">&url.pecl.package;luasandbox</link>
+  To enable luasandbox, run <option role="configure">phpenmod luasandbox</option>
+  and restart PHP service.
  </para>
 
 </section>

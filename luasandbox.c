@@ -10,6 +10,9 @@
 
 #include "php.h"
 #include "php_ini.h"
+
+#include "ext/pcre/php_pcre.h"
+
 #include "ext/standard/info.h"
 #include "zend_exceptions.h"
 #include "php_luasandbox.h"
@@ -108,6 +111,9 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_allowedGlobals, 0)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_additionalLibraries, 0)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_INFO_EX(arginfo_luasandbox_loadString, 0, 0, 1)
 	ZEND_ARG_INFO(0, code)
 	ZEND_ARG_INFO(0, chunkName)
@@ -194,6 +200,7 @@ const zend_function_entry luasandbox_functions[] = {
 const zend_function_entry luasandbox_methods[] = {
 	PHP_ME(LuaSandbox, getVersionInfo, arginfo_luasandbox_getVersionInfo, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
 	PHP_ME(LuaSandbox, allowedGlobals, arginfo_luasandbox_allowedGlobals, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
+	PHP_ME(LuaSandbox, additionalLibraries, arginfo_luasandbox_additionalLibraries, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)	
 	PHP_ME(LuaSandbox, loadString, arginfo_luasandbox_loadString, 0)
 	PHP_ME(LuaSandbox, loadBinary, arginfo_luasandbox_loadBinary, 0)
 	PHP_ME(LuaSandbox, setMemoryLimit, arginfo_luasandbox_setMemoryLimit, 0)
@@ -300,7 +307,7 @@ static void register_allowed_globals( HashTable *table, const char *list TSRMLS_
 }
 /* }}} */
 
-/* {{{ PHP_INI_MH
+/* {{{ PHP_INI_MH(luasandbox_update_allowed_globals)
  */
 static PHP_INI_MH(luasandbox_update_allowed_globals) {
 
@@ -317,7 +324,7 @@ static PHP_INI_MH(luasandbox_update_allowed_globals) {
 		/* Fill up the hashtable . */
 		/* Leave this until php_explode() stops segfaulting.
 		zval * exploded;
-		 array_init( exploded );
+		array_init( exploded );
 		exploded = php_explode( delim, list, exploded, ZEND_LONG_MAX );
 		LUASANDBOX_G(allowed_globals) = *Z_ARRVAL_P(exploded);
 		*/
@@ -325,6 +332,91 @@ static PHP_INI_MH(luasandbox_update_allowed_globals) {
 
 		return SUCCESS;
 	}
+}
+/* }}} */
+
+/* {{{ PHP_INI_MH(luasandbox_update_additional_libraries)
+ */
+static PHP_INI_MH(luasandbox_update_additional_libraries) {
+    if ( new_value != NULL ) {
+		if ( LUASANDBOX_G(additional_libraries).nNumOfElements ) {
+			/* Clean up old values, if any. */
+			zend_hash_destroy( &LUASANDBOX_G(additional_libraries) );
+		}
+		zend_hash_init( &LUASANDBOX_G(additional_libraries), 0, NULL, NULL, 1 );
+		if ( LUASANDBOX_G(library_loaders).nNumOfElements ) {
+			/* Clean up old values, if any. */
+			zend_hash_destroy( &LUASANDBOX_G(library_loaders) );
+		}
+		zend_hash_init( &LUASANDBOX_G(library_loaders), 0, NULL, NULL, 1 );
+		
+		/* Cast new value from php.ini or ini_set() to *char, if necessary. */
+		PCRE2_SPTR list;
+#if PHP_VERSION_ID < 70000
+		list = (PCRE2_SPTR)new_value;
+#else
+		list = (PCRE2_SPTR)ZSTR_VAL(new_value);
+#endif
+		PCRE2_SIZE list_len = (PCRE2_SIZE)strlen( (char *)list );
+
+		PCRE2_SPTR pattern = "(?<lib>[^:=\\s]+)\\s*=\\s*(?<path>[^:\\s]+)";
+		int errornumber;
+		PCRE2_SIZE erroroffset;
+		pcre2_code * re = pcre2_compile(
+			pattern,
+			PCRE2_ZERO_TERMINATED,
+			PCRE2_NEVER_UTF,
+			&errornumber,
+			&erroroffset,
+			NULL
+		);
+		pcre2_match_data * matches = pcre2_match_data_create_from_pattern( re, NULL );
+		PCRE2_SIZE offset = 0;
+		while ( offset < list_len && pcre2_match(re, list, list_len, offset, 0, matches, NULL) > 0 ) {
+			offset = pcre2_get_ovector_pointer( matches )[1];
+			PCRE2_UCHAR * lib;
+			PCRE2_SIZE lib_len;
+			pcre2_substring_get_byname( matches, "lib", &lib, &lib_len );
+			PCRE2_UCHAR * path;
+			PCRE2_SIZE path_len;
+			pcre2_substring_get_byname( matches, "path", &path, &path_len );
+			if ( lib_len && path_len ) {
+				void * lib_so = dlopen( path, RTLD_LAZY | RTLD_GLOBAL );
+				if ( lib_so ) {
+					zval lib_so_z;
+					ZVAL_PTR(&lib_so_z, lib_so);
+					char loader[32] = "luaopen_";
+					strcat( loader, lib );
+					char * error = dlerror();
+					if ( !error ) {					
+						lua_CFunction loader_ptr = (lua_CFunction) dlsym( lib_so, loader );
+						error = dlerror();
+						if ( !error && loader_ptr ) {
+							zval loader_z;
+							ZVAL_PTR(&loader_z, loader_ptr);
+							zend_hash_str_add_new( &LUASANDBOX_G(library_loaders), lib, lib_len, &loader_z );
+							zval path_z;
+							ZVAL_STR(&path_z, zend_string_init(path, path_len, 1));
+							zend_hash_str_add_new( &LUASANDBOX_G(additional_libraries), lib, lib_len, &lib_so_z );
+						} else {
+							php_printf( "Could not load symbol %s from library %s: error %s\n", loader, path, error );
+							php_error_docref(
+								NULL TSRMLS_CC, E_ERROR, "Could not load symbol %s from library %s: error %s\n",
+								loader, path, error
+							);
+							return FAILURE;
+						}
+					}
+				}
+			}
+			pcre2_substring_free( lib );
+			pcre2_substring_free( path );
+		}
+		pcre2_match_data_free( matches );
+		pcre2_code_free( re );
+		return SUCCESS;
+	}
+	return FAILURE;
 }
 /* }}} */
 
@@ -352,6 +444,12 @@ PHP_INI_BEGIN()
 		PHP_LUASANDBOX_INI_ALLOWED_GLOBALS,	"assert,error,getfenv,getmetatable,ipairs,next,pairs,rawequal,rawget,rawset,select,setfenv,setmetatable,tonumber,type,unpack,_G,_VERSION,string,table,math,os,debug",
 		PHP_INI_SYSTEM,
 		luasandbox_update_allowed_globals
+	)
+	PHP_INI_ENTRY(
+		PHP_LUASANDBOX_INI_ADDITIONAL_LIBRARIES,
+		"",
+		PHP_INI_SYSTEM,
+		luasandbox_update_additional_libraries
 	)
 PHP_INI_END()
 
@@ -433,7 +531,7 @@ static PHP_GINIT_FUNCTION(luasandbox)
 }
 /* }}} */
 
-/** {{{ luasandbox_destroy_globals */
+/** {{{ PHP_GSHUTDOWN_FUNCTION(luasandbox) */
 static PHP_GSHUTDOWN_FUNCTION(luasandbox)
 {
 }
@@ -444,7 +542,14 @@ static PHP_GSHUTDOWN_FUNCTION(luasandbox)
 PHP_MSHUTDOWN_FUNCTION(luasandbox)
 {
 	luasandbox_timer_mshutdown(TSRMLS_C);
-	zend_hash_destroy( &LUASANDBOX_G(allowed_globals) );	
+	zend_hash_destroy( &LUASANDBOX_G(allowed_globals) );
+	zend_string * lib_z;
+	zval * lib_so_z;
+	ZEND_HASH_FOREACH_STR_KEY_VAL(&LUASANDBOX_G(additional_libraries), lib_z, lib_so_z)
+		dlclose( Z_PTR_P(lib_so_z) );
+	ZEND_HASH_FOREACH_END();
+	zend_hash_destroy( &LUASANDBOX_G(additional_libraries) );
+	zend_hash_destroy( &LUASANDBOX_G(library_loaders) );
 	UNREGISTER_INI_ENTRIES();
 	return SUCCESS;
 }
@@ -470,7 +575,30 @@ PHP_RSHUTDOWN_FUNCTION(luasandbox)
 PHP_MINFO_FUNCTION(luasandbox)
 {
 	php_info_print_table_start();
-	php_info_print_table_header(2, "luasandbox support", "enabled");
+	php_info_print_table_row( 2, "luasandbox support", "enabled" );
+
+	char libraries[255] = "";
+	zend_string * lib_z;
+	int counter = 0;
+	ZEND_HASH_FOREACH_STR_KEY(&LUASANDBOX_G(additional_libraries), lib_z)
+		strcat( libraries, ZSTR_VAL(lib_z) );
+		if ( ++counter < LUASANDBOX_G(additional_libraries).nNumOfElements ) {
+			strcat( libraries, ", " );
+		}
+	ZEND_HASH_FOREACH_END();
+	php_info_print_table_row( 2, "Loaded additional libraries", libraries );
+
+	char globals[1023] = "";
+	zend_string * global_z;
+	counter = 0;
+	ZEND_HASH_FOREACH_STR_KEY(&LUASANDBOX_G(allowed_globals), global_z)
+		strcat( globals, ZSTR_VAL(global_z) );
+		if ( ++counter < LUASANDBOX_G(allowed_globals).nNumOfElements ) {
+			strcat( globals, ", " );
+		}
+	ZEND_HASH_FOREACH_END();
+	php_info_print_table_row( 2, "Allowed globals", globals );
+
 	php_info_print_table_end();
 }
 /* }}} */
@@ -1998,8 +2126,9 @@ static int LuaSandbox_registerLibrary_protected(lua_State* L) {
 	return 0;
 }
 
-PHP_METHOD(LuaSandbox, registerLibrary)
-{
+/** {{{ LuaSandbox::registerLibrary
+ */
+PHP_METHOD(LuaSandbox, registerLibrary) {
 	struct LuaSandbox_registerLibrary_params p;
 	lua_State * L;
 	int status;
@@ -2027,6 +2156,7 @@ PHP_METHOD(LuaSandbox, registerLibrary)
 		RETVAL_FALSE;
 	}
 }
+
 /** {{{ LuaSandbox::allowedGlobals
  */
 PHP_METHOD(LuaSandbox, allowedGlobals) {
@@ -2046,6 +2176,20 @@ PHP_METHOD(LuaSandbox, allowedGlobals) {
 		php_sprintf( msg, "No globals are allowed. Set %s in php.ini\n", PHP_LUASANDBOX_INI_ALLOWED_GLOBALS );
 		add_next_index_string( return_value, msg );
 	}
+}
+/* }}} */
+
+/** {{{ LuaSandbox::additionalLibraries
+ */
+PHP_METHOD(LuaSandbox, additionalLibraries) {
+#if PHP_VERSION_ID < 70000
+	MAKE_STD_ZVAL(return_value);
+#endif
+	array_init_size( return_value, LUASANDBOX_G(library_loaders).nNumOfElements );
+	zend_string * lib_z;
+	ZEND_HASH_FOREACH_STR_KEY(&LUASANDBOX_G(additional_libraries), lib_z)
+		add_next_index_stringl( return_value, ZSTR_VAL(lib_z), ZSTR_LEN(lib_z) );
+	ZEND_HASH_FOREACH_END();
 }
 /* }}} */
 
