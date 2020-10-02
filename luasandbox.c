@@ -344,6 +344,11 @@ static PHP_INI_MH(luasandbox_update_additional_libraries) {
 			zend_hash_destroy( &LUASANDBOX_G(additional_libraries) );
 		}
 		zend_hash_init( &LUASANDBOX_G(additional_libraries), 0, NULL, NULL, 1 );
+		if ( LUASANDBOX_G(library_loaders).nNumOfElements ) {
+			/* Clean up old values, if any. */
+			zend_hash_destroy( &LUASANDBOX_G(library_loaders) );
+		}
+		zend_hash_init( &LUASANDBOX_G(library_loaders), 0, NULL, NULL, 1 );
 		
 		/* Cast new value from php.ini or ini_set() to *char, if necessary. */
 		PCRE2_SPTR list;
@@ -376,9 +381,33 @@ static PHP_INI_MH(luasandbox_update_additional_libraries) {
 			PCRE2_SIZE path_len;
 			pcre2_substring_get_byname( matches, "path", &path, &path_len );
 			if ( lib_len && path_len ) {
-				zval path_z;
-				ZVAL_STR(&path_z, zend_string_init(path, path_len, 1));
-				zend_hash_str_add_new( &LUASANDBOX_G(additional_libraries), lib, lib_len, &path_z ); 
+				void * lib_so = dlopen( path, RTLD_LAZY | RTLD_GLOBAL );
+				if ( lib_so ) {
+					zval lib_so_z;
+					ZVAL_PTR(&lib_so_z, lib_so);
+					char loader[32] = "luaopen_";
+					strcat( loader, lib );
+					char * error = dlerror();
+					if ( !error ) {					
+						lua_CFunction loader_ptr = (lua_CFunction) dlsym( lib_so, loader );
+						error = dlerror();
+						if ( !error && loader_ptr ) {
+							zval loader_z;
+							ZVAL_PTR(&loader_z, loader_ptr);
+							zend_hash_str_add_new( &LUASANDBOX_G(library_loaders), lib, lib_len, &loader_z );
+							zval path_z;
+							ZVAL_STR(&path_z, zend_string_init(path, path_len, 1));
+							zend_hash_str_add_new( &LUASANDBOX_G(additional_libraries), lib, lib_len, &lib_so_z );
+						} else {
+							php_printf( "Could not load symbol %s from library %s: error %s\n", loader, path, error );
+							php_error_docref(
+								NULL TSRMLS_CC, E_ERROR, "Could not load symbol %s from library %s: error %s\n",
+								loader, path, error
+							);
+							return FAILURE;
+						}
+					}
+				}
 			}
 			pcre2_substring_free( lib );
 			pcre2_substring_free( path );
@@ -418,7 +447,7 @@ PHP_INI_BEGIN()
 	)
 	PHP_INI_ENTRY(
 		PHP_LUASANDBOX_INI_ADDITIONAL_LIBRARIES,
-		"lpeg=/lib/x86_64-linux-gnu/lua/5.1/lpeg.so:rex_pcre=/lib/x86_64-linux-gnu/lua/5.1/rex_pcre.so",
+		"",
 		PHP_INI_SYSTEM,
 		luasandbox_update_additional_libraries
 	)
@@ -513,7 +542,14 @@ static PHP_GSHUTDOWN_FUNCTION(luasandbox)
 PHP_MSHUTDOWN_FUNCTION(luasandbox)
 {
 	luasandbox_timer_mshutdown(TSRMLS_C);
-	zend_hash_destroy( &LUASANDBOX_G(allowed_globals) );	
+	zend_hash_destroy( &LUASANDBOX_G(allowed_globals) );
+	zend_string * lib_z;
+	zval * lib_so_z;
+	ZEND_HASH_FOREACH_STR_KEY_VAL(&LUASANDBOX_G(additional_libraries), lib_z, lib_so_z)
+		dlclose( Z_PTR_P(lib_so_z) );
+	ZEND_HASH_FOREACH_END();
+	zend_hash_destroy( &LUASANDBOX_G(additional_libraries) );
+	zend_hash_destroy( &LUASANDBOX_G(library_loaders) );
 	UNREGISTER_INI_ENTRIES();
 	return SUCCESS;
 }
@@ -539,14 +575,29 @@ PHP_RSHUTDOWN_FUNCTION(luasandbox)
 PHP_MINFO_FUNCTION(luasandbox)
 {
 	php_info_print_table_start();
-	php_info_print_table_header(2, "luasandbox support", "enabled");
-	
-	php_info_print_table_colspan_header( 2, "Additional libraries");
+	php_info_print_table_row( 2, "luasandbox support", "enabled" );
+
+	char libraries[255] = "";
 	zend_string * lib_z;
-	zval * path_z;
-	ZEND_HASH_FOREACH_STR_KEY_VAL(&LUASANDBOX_G(additional_libraries), lib_z, path_z)
-		php_info_print_table_row( 2, ZSTR_VAL(lib_z), Z_STRVAL(*path_z));
+	int counter = 0;
+	ZEND_HASH_FOREACH_STR_KEY(&LUASANDBOX_G(additional_libraries), lib_z)
+		strcat( libraries, ZSTR_VAL(lib_z) );
+		if ( ++counter < LUASANDBOX_G(additional_libraries).nNumOfElements ) {
+			strcat( libraries, ", " );
+		}
 	ZEND_HASH_FOREACH_END();
+	php_info_print_table_row( 2, "Loaded additional libraries", libraries );
+
+	char globals[1023] = "";
+	zend_string * global_z;
+	counter = 0;
+	ZEND_HASH_FOREACH_STR_KEY(&LUASANDBOX_G(allowed_globals), global_z)
+		strcat( globals, ZSTR_VAL(global_z) );
+		if ( ++counter < LUASANDBOX_G(allowed_globals).nNumOfElements ) {
+			strcat( globals, ", " );
+		}
+	ZEND_HASH_FOREACH_END();
+	php_info_print_table_row( 2, "Allowed globals", globals );
 
 	php_info_print_table_end();
 }
@@ -2134,11 +2185,10 @@ PHP_METHOD(LuaSandbox, additionalLibraries) {
 #if PHP_VERSION_ID < 70000
 	MAKE_STD_ZVAL(return_value);
 #endif
-	array_init_size( return_value, LUASANDBOX_G(additional_libraries).nNumOfElements );
+	array_init_size( return_value, LUASANDBOX_G(library_loaders).nNumOfElements );
 	zend_string * lib_z;
-	zval * path_z;
-	ZEND_HASH_FOREACH_STR_KEY_VAL(&LUASANDBOX_G(additional_libraries), lib_z, path_z)
-		add_assoc_string(return_value, ZSTR_VAL(lib_z), Z_STRVAL(*path_z) );
+	ZEND_HASH_FOREACH_STR_KEY(&LUASANDBOX_G(additional_libraries), lib_z)
+		add_next_index_stringl( return_value, ZSTR_VAL(lib_z), ZSTR_LEN(lib_z) );
 	ZEND_HASH_FOREACH_END();
 }
 /* }}} */

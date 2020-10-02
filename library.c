@@ -91,6 +91,18 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 	luasandbox_lib_filter_table(L, luasandbox_allowed_debug_members);
 	lua_setglobal(L, "debug");
 
+	// Load additional libraries:
+	zend_string * lib_z;
+	zval * loader_z;
+	ZEND_HASH_FOREACH_STR_KEY_VAL(&LUASANDBOX_G(library_loaders), lib_z, loader_z)
+		lua_CFunction loader_ptr = Z_PTR_P(loader_z);
+		if ( loader_ptr ) {
+			lua_pushcfunction( L, loader_ptr );
+			lua_call( L, 0, 1 );
+			lua_setglobal( L, ZSTR_VAL(lib_z) );
+		}
+	ZEND_HASH_FOREACH_END();
+	
 	// Remove any globals that aren't in a whitelist. This is mostly to remove
 	// unsafe functions from the base library.
 	lua_pushnil(L);

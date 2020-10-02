@@ -46,6 +46,7 @@
  </preface>
 
  &reference.luasandbox.setup;
+ &reference.luasandbox.ini; 
  <!-- &reference.luasandbox.constants; -->
  &reference.luasandbox.differences;
  &reference.luasandbox.examples;

@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- $Revision$ -->
+<section xml:id="apcu.configuration" xmlns="http://docbook.org/ns/docbook">
+ &reftitle.runtime;
+ &extension.runtime;
+	 <para>
+	 	luasandbox for traditio.wiki offers the following configuration settings:
+	 </para>
+	<table>
+		<title>APCu configuration options</title>
+		<tgroup cols="4">
+			<thead>
+				<row>
+					<entry>&Name;</entry>
+					<entry>&Default;</entry>
+					<entry>&Changeable;</entry>
+					<entry>&Changelog;</entry>
+				</row>
+			</thead>
+			<tbody>
+				<row>
+					<entry><link linkend="ini.luasandbox.additional_libraries">luasandbox.additional_libraries</link></entry>
+					<entry>""</entry>
+					<entry>PHP_INI_SYSTEM</entry>
+					<entry></entry>
+				</row>
+				<row>
+					<entry><link linkend="ini.luasandbox.allowed_globals">luasandbox.allowed_globals</link></entry>
+						<entry>"assert,error,getfenv,getmetatable,ipairs,next,pairs,rawequal,rawget,rawset,select,setfenv,setmetatable,tonumber,type,unpack,_G,_VERSION,string,table,math,os,debug"</entry>
+					<entry>PHP_INI_SYSTEM</entry>
+					<entry></entry>
+				</row>
+			</tbody>
+		</tgroup>
+	</table>
+
+	&ini.descriptions.title;
+ 	<para>
+	<variablelist>
+		<varlistentry xml:id="luasandbox.additional_libraries">
+			<term>
+				<parameter>luasandbox.additional_libraries</parameter>
+				<type>string</type>
+			</term>
+			<listitem>
+				<para>
+					<literal>luasandbox.additional_libraries</literal> can be used to load additional Lua C libraries,
+					in the following form:
+					<literal>lib1=absolute path to .so file 1:lib2=absolute path to .so file 2</literal>,
+					e.g. <literal>rex_pcre=/usr/lib/x86_64-linux-gnu/lua/5.1/rex_pcre.so</literal> means that PHP engine
+					will attempt to load /usr/lib/x86_64-linux-gnu/lua/5.1/rex_pcre.so library,
+					call the initialization function <literal>luaopen_rex_pcre()</literal> and make the library available
+					under global name <literal>rex_pcre</literal>.
+				</para>
+				<para>
+					Note that the additional libraries will be filtered according to
+					<literal><link linkend="ini.luasandbox.allowed_globals">luasandbox.allowed_globals</link></literal>,
+					so that they have to be enabled there as well.
+				</para>
+			</listitem>
+		</varlistentry>
+		<varlistentry xml:id="luasandbox.allowed_globals">
+			<term>
+				<parameter>luasandbox.allowed_globals</parameter>
+				<type>string</type>
+			</term>
+			<listitem>
+				<para>
+					<literal>luasandbox.allowed_globals</literal> can be used to selecively enable and disable Lua globals.
+					Globals allowed by default are <literal>assert, error, getfenv, getmetatable, ipairs, next, pairs,
+					rawequal, rawget, rawset, select, setfenv, setmetatable, tonumber, type, unpack, _G, _VERSION, string,
+					table, math, os, debug</literal>.
+					Great care should be exercised while expanding this list, as it is a security risk.
+				</para>
+			</listitem>
+		</varlistentry>
+	</section>
+
+<!-- Keep this comment at the end of the file
+Local variables:
+mode: sgml
+sgml-omittag:t
+sgml-shorttag:t
+sgml-minimize-attributes:nil
+sgml-always-quote-attributes:t
+sgml-indent-step:1
+sgml-indent-data:t
+indent-tabs-mode:nil
+sgml-parent-document:nil
+sgml-default-dtd-file:"~/.phpdoc/manual.ced"
+sgml-exposed-tags:nil
+sgml-local-catalogs:nil
+sgml-local-ecat-files:nil
+End:
+vim600: syn=xml fen fdm=syntax fdl=2 si
+vim: et tw=78 syn=sgml
+vi: ts=1 sw=1
+-->
