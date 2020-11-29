@@ -14,34 +14,16 @@
 #include "zend_exceptions.h"
 #include "php_luasandbox.h"
 #include "luasandbox_timer.h"
-#if PHP_VERSION_ID < 70000
-#include "ext/standard/php_smart_str.h"
-#else
 #include "zend_smart_str.h"
-#endif
 #include "luasandbox_version.h"
 
-// Compatability for PHP <= 5.3.6
-#ifndef ZEND_FE_END
-#define ZEND_FE_END { NULL, NULL, NULL, 0, 0 }
-#endif
-
 // Compatability typedefs and defines to hide some PHP5/PHP7 differences
-#if PHP_VERSION_ID < 70000
-typedef zend_object_value object_constructor_ret_t;
-typedef int str_param_len_t;
-typedef long long_param_t;
-typedef zval*** star_param_t;
-#define compat_zend_register_internal_class_ex(ce, parent_ce) zend_register_internal_class_ex(ce, parent_ce, NULL TSRMLS_CC)
-#define compat_add_assoc_string(assoc, key, val) add_assoc_string((assoc), (key), (val), 1)
-#else
 typedef zend_object* object_constructor_ret_t;
 typedef size_t str_param_len_t;
 typedef zend_long long_param_t;
 typedef zval* star_param_t;
 #define compat_zend_register_internal_class_ex(ce, parent_ce) zend_register_internal_class_ex(ce, parent_ce)
 #define compat_add_assoc_string(assoc, key, val) add_assoc_string((assoc), (key), (val))
-#endif
 
 #define CHECK_VALID_STATE(state) \
 	if (!state) { \
@@ -96,10 +78,8 @@ zend_class_entry *luasandboxfunction_ce;
 
 ZEND_DECLARE_MODULE_GLOBALS(luasandbox);
 
-#if PHP_VERSION_ID >= 70000
 static zend_object_handlers luasandbox_object_handlers;
 static zend_object_handlers luasandboxfunction_object_handlers;
-#endif
 
 /** {{{ arginfo */
 ZEND_BEGIN_ARG_INFO(arginfo_luasandbox_getVersionInfo, 0)
@@ -231,9 +211,7 @@ const zend_function_entry luasandbox_empty_methods[] = {
 /* {{{ luasandbox_module_entry
  */
 zend_module_entry luasandbox_module_entry = {
-#if ZEND_MODULE_API_NO >= 20010901
 	STANDARD_MODULE_HEADER,
-#endif
 	"luasandbox",
 	luasandbox_functions,
 	PHP_MINIT(luasandbox),
@@ -310,14 +288,12 @@ PHP_MINIT_FUNCTION(luasandbox)
 	luasandboxfunction_ce = zend_register_internal_class(&ce TSRMLS_CC);
 	luasandboxfunction_ce->create_object = luasandboxfunction_new;
 
-#if PHP_VERSION_ID >= 70000
 	memcpy(&luasandbox_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
 	luasandbox_object_handlers.offset = XtOffsetOf(php_luasandbox_obj, std);
 	luasandbox_object_handlers.free_obj = (zend_object_free_obj_t)luasandbox_free_storage;
 	memcpy(&luasandboxfunction_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
 	luasandboxfunction_object_handlers.offset = XtOffsetOf(php_luasandboxfunction_obj, std);
 	luasandboxfunction_object_handlers.free_obj = (zend_object_free_obj_t)luasandboxfunction_free_storage;
-#endif
 
 	luasandbox_timer_minit(TSRMLS_C);
 
@@ -389,18 +365,14 @@ static object_constructor_ret_t luasandbox_new(zend_class_entry *ce TSRMLS_DC)
 	php_luasandbox_obj * sandbox;
 
 	// Create the internal object
-#if PHP_VERSION_ID < 70000
-	sandbox = (php_luasandbox_obj*)ecalloc(1, sizeof(php_luasandbox_obj));
-#elif PHP_VERSION_ID < 70300
+#if PHP_VERSION_ID < 70300
 	sandbox = (php_luasandbox_obj*)ecalloc(1, sizeof(php_luasandbox_obj) + zend_object_properties_size(ce));
 #else
 	sandbox = (php_luasandbox_obj*)zend_object_alloc(sizeof(php_luasandbox_obj), ce);
 #endif
 
 	zend_object_std_init(&sandbox->std, ce TSRMLS_CC);
-#if PHP_VERSION_ID > 50399
 	object_properties_init(&sandbox->std, ce);
-#endif
 	sandbox->alloc.memory_limit = (size_t)-1;
 	sandbox->allow_pause = 1;
 
@@ -410,22 +382,9 @@ static object_constructor_ret_t luasandbox_new(zend_class_entry *ce TSRMLS_DC)
 	// Initialise the timer
 	luasandbox_timer_create(&sandbox->timer, sandbox);
 
-#if PHP_VERSION_ID < 70000
-	// Put the object into the store
-	zend_object_value retval;
-	retval.handle = zend_objects_store_put(
-		sandbox,
-		(zend_objects_store_dtor_t)zend_objects_destroy_object,
-		(zend_objects_free_object_storage_t)luasandbox_free_storage,
-		NULL TSRMLS_CC);
-	retval.handlers = zend_get_std_object_handlers();
-	LUASANDBOX_G(active_count)++;
-	return retval;
-#else
 	sandbox->std.handlers = &luasandbox_object_handlers;
 	LUASANDBOX_G(active_count)++;
 	return &sandbox->std;
-#endif
 }
 /* }}} */
 
@@ -477,9 +436,7 @@ static void luasandbox_free_storage(zend_object *object TSRMLS_DC)
 		sandbox->state = NULL;
 	}
 	zend_object_std_dtor(&sandbox->std TSRMLS_CC);
-#if PHP_VERSION_ID < 70000
-	efree(object);
-#endif
+
 	LUASANDBOX_G(active_count)--;
 }
 /* }}} */
@@ -493,33 +450,17 @@ static object_constructor_ret_t luasandboxfunction_new(zend_class_entry *ce TSRM
 	php_luasandboxfunction_obj * intern;
 
 	// Create the internal object
-#if PHP_VERSION_ID < 70000
-	intern = (php_luasandboxfunction_obj*)ecalloc(1, sizeof(php_luasandboxfunction_obj));
-#elif PHP_VERSION_ID < 70300
+#if PHP_VERSION_ID < 70300
 	intern = (php_luasandboxfunction_obj*)ecalloc(1, sizeof(php_luasandboxfunction_obj) + zend_object_properties_size(ce));
 #else
 	intern = (php_luasandboxfunction_obj*)zend_object_alloc(sizeof(php_luasandboxfunction_obj), ce);
 #endif
 
 	zend_object_std_init(&intern->std, ce TSRMLS_CC);
-#if PHP_VERSION_ID > 50399
 	object_properties_init(&intern->std, ce);
-#endif
 
-#if PHP_VERSION_ID < 70000
-	// Put the object into the store
-	zend_object_value retval;
-	retval.handle = zend_objects_store_put(
-		intern,
-		(zend_objects_store_dtor_t)zend_objects_destroy_object,
-		(zend_objects_free_object_storage_t)luasandboxfunction_free_storage,
-		NULL TSRMLS_CC);
-	retval.handlers = zend_get_std_object_handlers();
-	return retval;
-#else
 	intern->std.handlers = &luasandboxfunction_object_handlers;
 	return &intern->std;
-#endif
 }
 /* }}} */
 
@@ -549,16 +490,9 @@ static void luasandboxfunction_free_storage(zend_object *object TSRMLS_DC)
 
 		// Delete the parent reference
 		zval_ptr_dtor(&func->sandbox);
-#if PHP_VERSION_ID < 70000
-		func->sandbox = NULL;
-#else
 		ZVAL_UNDEF(&func->sandbox);
-#endif
 	}
 	zend_object_std_dtor(&func->std TSRMLS_CC);
-#if PHP_VERSION_ID < 70000
-	efree(object);
-#endif
 }
 /* }}} */
 
@@ -613,9 +547,6 @@ struct luasandbox_load_helper_params {
 	php_luasandbox_obj * sandbox;
 	zval *zthis;
 	zval *return_value;
-#if defined(ZTS) && PHP_VERSION_ID < 70000
-	void ***tsrm_ls;
-#endif
 	char *code;
 	char *chunkName;
 	str_param_len_t codeLength;
@@ -625,9 +556,6 @@ static int luasandbox_load_helper_protected(lua_State* L) {
 	struct luasandbox_load_helper_params *p = (struct luasandbox_load_helper_params *)lua_touserdata(L, 1);
 	int status;
 	zval *return_value = p->return_value;
-#if defined(ZTS) && PHP_VERSION_ID < 70000
-	void ***tsrm_ls = p->tsrm_ls;
-#endif
 
 	// Parse the string into a function on the stack
 	status = luaL_loadbuffer(L, p->code, p->codeLength, p->chunkName);
@@ -702,9 +630,6 @@ static void luasandbox_load_helper(int binary, INTERNAL_FUNCTION_PARAMETERS)
 	luasandbox_timer_unpause(&p.sandbox->timer);
 
 	p.zthis = getThis();
-#if defined(ZTS) && PHP_VERSION_ID < 70000
-	p.tsrm_ls = tsrm_ls;
-#endif
 	p.return_value = return_value;
 	status = lua_cpcall(L, luasandbox_load_helper_protected, &p);
 
@@ -775,9 +700,6 @@ PHP_METHOD(LuaSandbox, loadBinary)
 static int luasandbox_safe_trace_to_zval(lua_State* L) {
 	zval *zsandbox = (zval *)lua_touserdata(L, 2);
 	zval *ztrace = (zval *)lua_touserdata(L, 3);
-#if defined(ZTS) && PHP_VERSION_ID < 70000
-	void ***tsrm_ls = (void ***)lua_touserdata(L, 4);
-#endif
 
 	luasandbox_lua_to_zval(ztrace, L, 1, zsandbox, NULL TSRMLS_CC);
 	return 0;
@@ -791,15 +713,10 @@ static void luasandbox_handle_error(php_luasandbox_obj * sandbox, int status TSR
 	zval *zex, *ztrace;
 	size_t old_memory_limit;
 
-#if PHP_VERSION_ID < 70000
-	MAKE_STD_ZVAL(zex);
-	ALLOC_INIT_ZVAL(ztrace); // IS_NULL if lua_to_zval fails.
-#else
 	zval zvex, zvtrace;
 	zex = &zvex;
 	ztrace = &zvtrace;
 	ZVAL_NULL(ztrace);
-#endif
 
 	if (EG(exception)) {
 		lua_pop(L, 1);
@@ -853,13 +770,7 @@ static void luasandbox_handle_error(php_luasandbox_obj * sandbox, int status TSR
 		lua_rawgeti(L, -2, 3);
 		lua_pushlightuserdata(L, LUASANDBOX_GET_CURRENT_ZVAL_PTR(sandbox));
 		lua_pushlightuserdata(L, ztrace);
-		lua_pushlightuserdata(L,
-#if defined(ZTS) && PHP_VERSION_ID < 70000
-			tsrm_ls
-#else
-			NULL
-#endif
-		);
+		lua_pushlightuserdata(L, NULL);
 		sandbox->alloc.memory_limit = old_memory_limit;
 		if (lua_pcall(L, 4, 0, 0) == 0) {
 			// Put it in the exception object
@@ -874,11 +785,7 @@ static void luasandbox_handle_error(php_luasandbox_obj * sandbox, int status TSR
 			lua_pop(L, 1);
 		}
 	}
-#if PHP_VERSION_ID < 70000
-	zval_ptr_dtor(&ztrace);
-#else
 	zval_ptr_dtor(&zvtrace);
-#endif
 
 	// Initialise standard properties
 	// We would get Zend to do this, but the code for it is wrapped inside some
@@ -1094,20 +1001,10 @@ PHP_METHOD(LuaSandbox, disableProfiler)
 #ifndef HHVM
 static int luasandbox_sort_profile(const void *a, const void *b TSRMLS_DC) /* {{{ */
 {
-	Bucket *bucket_a, *bucket_b;
-	size_t value_a, value_b;
-
-#if PHP_VERSION_ID < 70000
-	bucket_a = *((Bucket **) a);
-	bucket_b = *((Bucket **) b);
-	value_a = *(size_t*)bucket_a->pData;
-	value_b = *(size_t*)bucket_b->pData;
-#else
-	bucket_a = (Bucket *) a;
-	bucket_b = (Bucket *) b;
-	value_a = (size_t)Z_LVAL(bucket_a->val);
-	value_b = (size_t)Z_LVAL(bucket_b->val);
-#endif
+	Bucket *bucket_a = (Bucket *) a;
+	Bucket *bucket_b = (Bucket *) b;
+	size_t value_a = (size_t)Z_LVAL(bucket_a->val);
+	size_t value_b = (size_t)Z_LVAL(bucket_b->val);
 
 	if (value_a < value_b) {
 		return 1;
@@ -1165,8 +1062,6 @@ PHP_METHOD(LuaSandbox, getProfilerFunctionReport)
 #ifdef HHVM
 	// HHVM's zend_hash_sort ignores the compar argument. The sorting is done
 	// in the systemlib instead.
-#elif PHP_VERSION_ID < 70000
-	zend_hash_sort(counts, zend_qsort, luasandbox_sort_profile, 0 TSRMLS_CC);
 #else
 	zend_hash_sort_ex(counts, zend_qsort, luasandbox_sort_profile, 0);
 #endif
@@ -1184,27 +1079,6 @@ PHP_METHOD(LuaSandbox, getProfilerFunctionReport)
 		}
 	}
 
-#if PHP_VERSION_ID < 70000
-	HashPosition p;
-	for (zend_hash_internal_pointer_reset_ex(counts, &p);
-			zend_hash_get_current_key_type_ex(counts, &p) != HASH_KEY_NON_EXISTANT;
-			zend_hash_move_forward_ex(counts, &p))
-	{
-		size_t *count;
-		char * func_name = "";
-		uint func_name_length = 0;
-		ulong lkey;
-
-		zend_hash_get_current_key_ex(counts, &func_name, &func_name_length,
-				&lkey, 0, &p);
-		zend_hash_get_current_data_ex(counts, (void**)&count, &p);
-		if (units == LUASANDBOX_SAMPLES) {
-			add_assoc_long_ex(return_value, func_name, func_name_length, *count);
-		} else {
-			add_assoc_double_ex(return_value, func_name, func_name_length, *count * scale);
-		}
-	}
-#else
 	zend_string *key;
 	zval *count, v;
 	ZVAL_NULL(&v);
@@ -1217,7 +1091,6 @@ PHP_METHOD(LuaSandbox, getProfilerFunctionReport)
 			zend_hash_add(Z_ARRVAL_P(return_value), key, &v);
 		}
 	} ZEND_HASH_FOREACH_END();
-#endif
 
 #ifdef LUASANDBOX_REPORT_OVERRUNS
 	if (units == LUASANDBOX_SAMPLES) {
@@ -1279,9 +1152,7 @@ struct LuaSandbox_callFunction_params {
 	php_luasandbox_obj * sandbox;
 	zval *zthis;
 	zval *return_value;
-#if defined(ZTS) && PHP_VERSION_ID < 70000
-	void ***tsrm_ls;
-#endif
+
 	char *name;
 	str_param_len_t nameLength;
 	int numArgs;
@@ -1291,9 +1162,6 @@ struct LuaSandbox_callFunction_params {
 static int LuaSandbox_callFunction_protected(lua_State* L) {
 	struct LuaSandbox_callFunction_params *p = (struct LuaSandbox_callFunction_params *)lua_touserdata(L, 1);
 	zval *return_value = p->return_value;
-#if defined(ZTS) && PHP_VERSION_ID < 70000
-	void ***tsrm_ls = p->tsrm_ls;
-#endif
 
 	// Find the function
 	if (!luasandbox_find_field(L, LUA_GLOBALSINDEX, p->name, p->nameLength)) {
@@ -1329,9 +1197,6 @@ PHP_METHOD(LuaSandbox, callFunction)
 
 	p.zthis = getThis();
 	p.return_value = return_value;
-#if defined(ZTS) && PHP_VERSION_ID < 70000
-	p.tsrm_ls = tsrm_ls;
-#endif
 	status = lua_cpcall(L, LuaSandbox_callFunction_protected, &p);
 
 	// Handle any error from Lua
@@ -1339,13 +1204,6 @@ PHP_METHOD(LuaSandbox, callFunction)
 		luasandbox_handle_error(p.sandbox, status TSRMLS_CC);
 		RETVAL_FALSE;
 	}
-
-#if PHP_VERSION_ID < 70000
-	// Delete varargs
-	if (p.numArgs) {
-		efree(p.args);
-	}
-#endif
 }
 /* }}} */
 
@@ -1364,18 +1222,12 @@ PHP_METHOD(LuaSandbox, callFunction)
 struct LuaSandbox_wrapPhpFunction_params {
 	zval *zthis;
 	zval *return_value;
-#if defined(ZTS) && PHP_VERSION_ID < 70000
-	void ***tsrm_ls;
-#endif
 	zval *z;
 };
 
 static int LuaSandbox_wrapPhpFunction_protected(lua_State* L) {
 	struct LuaSandbox_wrapPhpFunction_params *p = (struct LuaSandbox_wrapPhpFunction_params *)lua_touserdata(L, 1);
 	zval *return_value = p->return_value;
-#if defined(ZTS) && PHP_VERSION_ID < 70000
-	void ***tsrm_ls = p->tsrm_ls;
-#endif
 
 	luasandbox_push_zval_userdata(L, p->z);
 	lua_pushcclosure(L, luasandbox_call_php, 1);
@@ -1411,9 +1263,6 @@ PHP_METHOD(LuaSandbox, wrapPhpFunction)
 	}
 
 	p.return_value = return_value;
-#if defined(ZTS) && PHP_VERSION_ID < 70000
-	p.tsrm_ls = tsrm_ls;
-#endif
 	status = lua_cpcall(L, LuaSandbox_wrapPhpFunction_protected, &p);
 
 	// Handle any error from Lua
@@ -1501,9 +1350,6 @@ PHP_METHOD(LuaSandboxFunction, __construct)
 struct LuaSandboxFunction_call_params {
 	php_luasandbox_obj * sandbox;
 	zval *return_value;
-#if defined(ZTS) && PHP_VERSION_ID < 70000
-	void ***tsrm_ls;
-#endif
 	php_luasandboxfunction_obj *func;
 	int numArgs;
 	star_param_t args;
@@ -1512,9 +1358,6 @@ struct LuaSandboxFunction_call_params {
 static int LuaSandboxFunction_call_protected(lua_State* L) {
 	struct LuaSandboxFunction_call_params *p = (struct LuaSandboxFunction_call_params *)lua_touserdata(L, 1);
 	zval *return_value = p->return_value;
-#if defined(ZTS) && PHP_VERSION_ID < 70000
-	void ***tsrm_ls = p->tsrm_ls;
-#endif
 
 	luasandbox_function_push(p->func, L);
 	luasandbox_call_helper(L, LUASANDBOXFUNCTION_GET_SANDBOX_ZVALPTR(p->func),
@@ -1530,9 +1373,6 @@ PHP_METHOD(LuaSandboxFunction, call)
 	int status;
 
 	p.return_value = return_value;
-#if defined(ZTS) && PHP_VERSION_ID < 70000
-	p.tsrm_ls = tsrm_ls;
-#endif
 	p.numArgs = 0;
 	p.args = NULL;
 
@@ -1554,13 +1394,6 @@ PHP_METHOD(LuaSandboxFunction, call)
 		luasandbox_handle_error(p.sandbox, status TSRMLS_CC);
 		RETVAL_FALSE;
 	}
-
-#if PHP_VERSION_ID < 70000
-	// Delete varargs
-	if (p.numArgs) {
-		efree(p.args);
-	}
-#endif
 }
 /** }}} */
 
@@ -1574,11 +1407,7 @@ int luasandbox_call_lua(php_luasandbox_obj * sandbox, zval * sandbox_zval,
 {
 	int status;
 	int timer_started = 0;
-#if PHP_VERSION_ID < 70000
-	zval * old_zval;
-#else
 	zval old_zval;
-#endif
 	int was_paused;
 	int old_allow_pause;
 
@@ -1599,13 +1428,8 @@ int luasandbox_call_lua(php_luasandbox_obj * sandbox, zval * sandbox_zval,
 
 	// Save the current zval for later use in luasandbox_call_php. Restore it
 	// after execution finishes, to support re-entrancy.
-#if PHP_VERSION_ID < 70000
-	old_zval = sandbox->current_zval;
-	sandbox->current_zval = sandbox_zval;
-#else
 	ZVAL_COPY_VALUE(&old_zval, &sandbox->current_zval);
 	ZVAL_COPY_VALUE(&sandbox->current_zval, sandbox_zval);
-#endif
 
 	// Make sure this is counted against the Lua usage time limit, and set the
 	// allow_pause flag.
@@ -1618,11 +1442,7 @@ int luasandbox_call_lua(php_luasandbox_obj * sandbox, zval * sandbox_zval,
 	sandbox->in_lua++;
 	status = lua_pcall(sandbox->state, nargs, nresults, errfunc);
 	sandbox->in_lua--;
-#if PHP_VERSION_ID < 70000
-	sandbox->current_zval = old_zval;
-#else
 	ZVAL_COPY_VALUE(&sandbox->current_zval, &old_zval);
-#endif
 
 	// Restore pause state
 	sandbox->allow_pause = old_allow_pause;
@@ -1682,11 +1502,7 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 		RETURN_FALSE;
 	}
 	for (i = 0; i < numArgs; i++) {
-#if PHP_VERSION_ID < 70000
-		v = *(args[i]);
-#else
 		v = &(args[i]);
-#endif
 		if (!luasandbox_push_zval(L, v, NULL)) {
 			php_error_docref(NULL TSRMLS_CC, E_WARNING,
 				"unable to convert argument %d to a lua value", i + 1);
@@ -1707,18 +1523,6 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 
 	// Fill the array with the results
 	for (i = 0; i < numResults; i++) {
-#if PHP_VERSION_ID < 70000
-		zval * element;
-		ALLOC_INIT_ZVAL(element); // ensure elem is inited in case we bail
-		if (!luasandbox_lua_to_zval(element, L, retIndex + i, sandbox_zval, NULL TSRMLS_CC)) {
-			// Convert failed (which means an exception), so bail.
-			zval_ptr_dtor(&element);
-			break;
-		}
-		zend_hash_next_index_insert(Z_ARRVAL_P(return_value),
-			(void*)&element,
-			sizeof(zval*), NULL);
-#else
 		zval element;
 		ZVAL_NULL(&element); // ensure elem is inited in case we bail
 		if (!luasandbox_lua_to_zval(&element, L, retIndex + i, sandbox_zval, NULL TSRMLS_CC)) {
@@ -1727,7 +1531,6 @@ static void luasandbox_call_helper(lua_State * L, zval * sandbox_zval, php_luasa
 			break;
 		}
 		zend_hash_next_index_insert(Z_ARRVAL_P(return_value), &element);
-#endif
 	}
 
 	// Balance the stack
@@ -1844,36 +1647,6 @@ static int LuaSandbox_registerLibrary_protected(lua_State* L) {
 		lua_createtable(L, 0, zend_hash_num_elements(functions));
 	}
 
-#if PHP_VERSION_ID < 70000
-	HashPosition pos;
-	for (zend_hash_internal_pointer_reset_ex(functions, &pos);
-			zend_hash_get_current_key_type_ex(functions, &pos) != HASH_KEY_NON_EXISTANT;
-			zend_hash_move_forward_ex(functions, &pos))
-	{
-		char * key = "";
-		uint key_length = 0;
-		ulong lkey = 0;
-		zval ** callback;
-
-		int key_type = zend_hash_get_current_key_ex(functions, &key, &key_length,
-				&lkey, 0, &pos);
-		zend_hash_get_current_data_ex(functions, (void**)&callback, &pos);
-
-		// Push the key
-		if (key_type == HASH_KEY_IS_STRING) {
-			lua_pushlstring(L, key, key_length - 1);
-		} else {
-			lua_pushinteger(L, lkey);
-		}
-
-		// Push the callback zval and create the closure
-		luasandbox_push_zval_userdata(L, *callback);
-		lua_pushcclosure(L, luasandbox_call_php, 1);
-
-		// Add it to the table
-		lua_rawset(L, -3);
-	}
-#else
 	ulong lkey;
 	zend_string *key;
 	zval *callback;
@@ -1893,7 +1666,6 @@ static int LuaSandbox_registerLibrary_protected(lua_State* L) {
 		// Add it to the table
 		lua_rawset(L, -3);
 	} ZEND_HASH_FOREACH_END();
-#endif
 
 	// Move the new table to the global namespace
 	// The key is on the stack already
@@ -1961,12 +1733,7 @@ int luasandbox_call_php(lua_State * L)
 
 	luasandbox_enter_php(L, intern);
 
-	zval * callback_p;
-#if PHP_VERSION_ID < 70000
-	callback_p = *(zval**)lua_touserdata(L, lua_upvalueindex(1));
-#else
-	callback_p = (zval*)lua_touserdata(L, lua_upvalueindex(1));
-#endif
+	zval * callback_p = (zval*)lua_touserdata(L, lua_upvalueindex(1));
 	zend_fcall_info fci;
 	zend_fcall_info_cache fcc;
 	char *is_callable_error = NULL;
@@ -1991,33 +1758,12 @@ int luasandbox_call_php(lua_State * L)
 		return 1;
 	}
 
-#if PHP_VERSION_ID < 70000
-	zval *retval_ptr = NULL;
-	fci.retval_ptr_ptr = &retval_ptr;
-#else
 	zval retval;
 	fci.retval = &retval;
-#endif
 
 	int args_failed = 0;
 	star_param_t args;
-#if PHP_VERSION_ID < 70000
-	// Make an array of zval double-pointers to hold the arguments
-	args = (zval***)ecalloc(top, sizeof(void*) * 2);
-	zval **pointers = (zval**)(args + top);
-	for (i = 0; i < top; i++ ) {
-		args[i] = &(pointers[i]);
-		ALLOC_INIT_ZVAL(pointers[i]); // ensure is inited in case we fail
-		if (!luasandbox_lua_to_zval(pointers[i], L, i + 1, intern->current_zval, NULL TSRMLS_CC)) {
-			// Argument conversion failed, so skip the call. The PHP exception
-			// from the conversion will be handled below, along with freeing
-			// all the zvals in pointers[0 <= i < top].
-			args_failed = 1;
-			top = i + 1;
-			break;
-		}
-	}
-#else
+
 	// Make an array of zvals to hold the arguments
 	args = (zval *)ecalloc(top, sizeof(zval));
 	for (i = 0; i < top; i++ ) {
@@ -2031,7 +1777,6 @@ int luasandbox_call_php(lua_State * L)
 			break;
 		}
 	}
-#endif
 
 	if (!args_failed) {
 		// Initialise the fci. Use zend_fcall_info_args_restore() since that's an
@@ -2048,31 +1793,6 @@ int luasandbox_call_php(lua_State * L)
 		// Automatically unpause now that PHP has returned
 		luasandbox_timer_unpause(&intern->timer);
 
-#if PHP_VERSION_ID < 70000
-		if (status == SUCCESS && fci.retval_ptr_ptr && *fci.retval_ptr_ptr) {
-			// Push the return values back to Lua
-			if (Z_TYPE_PP(fci.retval_ptr_ptr) == IS_NULL) {
-				// No action
-			} else if (Z_TYPE_PP(fci.retval_ptr_ptr) == IS_ARRAY) {
-				ht = Z_ARRVAL_PP(fci.retval_ptr_ptr);
-				luaL_checkstack(L, zend_hash_num_elements(ht) + 10, "converting PHP return array to Lua");
-				HashPosition p;
-				for (zend_hash_internal_pointer_reset_ex(ht, &p);
-						zend_hash_get_current_key_type_ex(ht, &p) != HASH_KEY_NON_EXISTANT;
-						zend_hash_move_forward_ex(ht, &p))
-				{
-					zval ** value;
-					zend_hash_get_current_data_ex(ht, (void**)&value, &p);
-					luasandbox_push_zval(L, *value, NULL);
-					num_results++;
-				}
-			} else {
-				php_error_docref(NULL TSRMLS_CC, E_WARNING,
-					"function tried to return a single value to Lua without wrapping it in an array");
-			}
-			zval_ptr_dtor(&retval_ptr);
-		}
-#else
 		if (status == SUCCESS) {
 			// Push the return values back to Lua
 			if (Z_ISNULL_P(fci.retval) || Z_ISUNDEF_P(fci.retval)) {
@@ -2093,16 +1813,11 @@ int luasandbox_call_php(lua_State * L)
 			}
 			zval_ptr_dtor(&retval);
 		}
-#endif
 	}
 
 	// Free the argument zvals
 	for (i = 0; i < top; i++) {
-#if PHP_VERSION_ID < 70000
-		zval_ptr_dtor(args[i]);
-#else
 		zval_ptr_dtor(&(args[i]));
-#endif
 	}
 	efree(args);
 	luasandbox_leave_php(L, intern);
@@ -2110,15 +1825,11 @@ int luasandbox_call_php(lua_State * L)
 	// If an exception occurred, convert it to a Lua error
 	if (EG(exception)) {
 		// Get the error message and push it to the stack
-#if PHP_VERSION_ID < 70000
-		zend_class_entry * ce = Z_OBJCE_P(EG(exception));
-		zval * zmsg = zend_read_property(ce, EG(exception), "message", sizeof("message")-1, 1 TSRMLS_CC);
-#else
 		zval exception, rv;
 		ZVAL_OBJ(&exception, EG(exception));
 		zend_class_entry * ce = Z_OBJCE(exception);
 		zval * zmsg = zend_read_property(ce, &exception, "message", sizeof("message")-1, 1, &rv);
-#endif
+
 		if (zmsg && Z_TYPE_P(zmsg) == IS_STRING) {
 			lua_pushlstring(L, Z_STRVAL_P(zmsg), Z_STRLEN_P(zmsg));
 		} else {
@@ -2161,13 +1872,8 @@ static int LuaSandboxFunction_dump_protected(lua_State* L) {
 	luasandbox_function_push(p->func, L);
 	lua_dump(L, luasandbox_dump_writer, (void*)&buf);
 	smart_str_0(&buf);
-#if PHP_VERSION_ID < 70000
-	if (buf.len) {
-		RETVAL_STRINGL(buf.c, buf.len, 0);
-#else
 	if (buf.s) {
 		RETVAL_STR(buf.s);
-#endif
 	} else {
 		smart_str_free(&buf);
 		RETVAL_EMPTY_STRING();

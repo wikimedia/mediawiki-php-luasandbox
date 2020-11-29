@@ -239,29 +239,16 @@ static char * luasandbox_timer_get_cfunction_name(lua_State *L)
 	}
 
 	lua_getupvalue(L, -1, 1);
-#if PHP_VERSION_ID < 70000
-	zval ** callback_pp = (zval**)lua_touserdata(L, -1);
-	if (!callback_pp || !*callback_pp) {
-		return NULL;
-	}
-	char * callback_name;
-	zend_bool ok = zend_is_callable(*callback_pp, IS_CALLABLE_CHECK_SILENT, &callback_name TSRMLS_CC);
-#else
+
 	zval * callback_p = (zval*)lua_touserdata(L, -1);
 	if (!callback_p) {
 		return NULL;
 	}
 	zend_string * callback_name;
 	zend_bool ok = zend_is_callable(callback_p, IS_CALLABLE_CHECK_SILENT, &callback_name);
-#endif
+
 	if (ok) {
-		snprintf(buffer, sizeof(buffer), "%s",
-#if PHP_VERSION_ID < 70000
-			callback_name
-#else
-			ZSTR_VAL(callback_name)
-#endif
-		);
+		snprintf(buffer, sizeof(buffer), "%s", ZSTR_VAL(callback_name));
 		return buffer;
 	} else {
 		return NULL;
@@ -299,12 +286,8 @@ static void luasandbox_timer_profiler_hook(lua_State *L, lua_Debug *ar)
 		prof_name_size += strlen(name);
 	}
 
-#if PHP_VERSION_ID < 70000
-	char prof_name[prof_name_size];
-#else
 	zend_string *zstr = zend_string_alloc(prof_name_size, 0);
 	char *prof_name = ZSTR_VAL(zstr);
-#endif
 
 	if (!name) {
 		if (ar->linedefined > 0) {
@@ -324,18 +307,6 @@ static void luasandbox_timer_profiler_hook(lua_State *L, lua_Debug *ar)
 
 	luasandbox_timer_set * lts = &sandbox->timer;
 	HashTable * ht = lts->function_counts;
-#if PHP_VERSION_ID < 70000
-	// Key length in zend_hash conventionally includes the null byte
-	uint key_length = (uint)strlen(prof_name) + 1;
-	ulong h = zend_inline_hash_func(prof_name, key_length);
-	size_t * elt;
-	if (SUCCESS == zend_hash_quick_find(ht, prof_name, key_length, h, (void**)&elt)) {
-		(*elt) += signal_count;
-	} else {
-		size_t init = signal_count;
-		zend_hash_quick_add(ht, prof_name, key_length, h, (void**)&init, sizeof(size_t), NULL);
-	}
-#else
 	ZSTR_LEN(zstr) = strlen(prof_name);
 	zval *elt = zend_hash_find(ht, zstr);
 	if (elt != NULL) {
@@ -346,7 +317,6 @@ static void luasandbox_timer_profiler_hook(lua_State *L, lua_Debug *ar)
 		zend_hash_add(ht, zstr, &v);
 	}
 	zend_string_release(zstr);
-#endif
 
 	lts->total_count += signal_count;
 }

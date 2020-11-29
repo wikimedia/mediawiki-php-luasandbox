@@ -140,12 +140,7 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 			continue;
 		}
 		key = lua_tolstring(L, -1, &key_len);
-#if PHP_VERSION_ID < 70000
-		if (!zend_hash_exists(luasandbox_lib_get_allowed_globals(TSRMLS_C), (char*)key, key_len + 1))
-#else
-		if (!zend_hash_str_exists(luasandbox_lib_get_allowed_globals(TSRMLS_C), key, key_len))
-#endif
-		{
+		if (!zend_hash_str_exists(luasandbox_lib_get_allowed_globals(TSRMLS_C), key, key_len)) {
 			// Not allowed, delete it
 			lua_pushnil(L);
 			lua_setglobal(L, key);
@@ -241,20 +236,12 @@ static HashTable * luasandbox_lib_get_allowed_globals(TSRMLS_D)
 	ALLOC_HASHTABLE(LUASANDBOX_G(allowed_globals));
 	zend_hash_init(LUASANDBOX_G(allowed_globals), n, NULL, NULL, 0);
 
-#if PHP_VERSION_ID >= 70000
 	zval zv;
 	ZVAL_TRUE(&zv);
-#endif
 
 	for (i = 0; luasandbox_allowed_globals[i]; i++) {
-#if PHP_VERSION_ID < 70000
-		zend_hash_update(LUASANDBOX_G(allowed_globals),
-			luasandbox_allowed_globals[i], strlen(luasandbox_allowed_globals[i]) + 1,
-			(void*)"", 1, NULL);
-#else
 		zend_hash_str_update(LUASANDBOX_G(allowed_globals),
 			luasandbox_allowed_globals[i], strlen(luasandbox_allowed_globals[i]), &zv);
-#endif
 	}
 
 	return LUASANDBOX_G(allowed_globals);
