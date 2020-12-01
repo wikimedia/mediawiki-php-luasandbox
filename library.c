@@ -21,7 +21,7 @@
 #endif
 
 static void luasandbox_lib_filter_table(lua_State * L, char ** member_names);
-static HashTable * luasandbox_lib_get_allowed_globals(TSRMLS_D);
+static HashTable * luasandbox_lib_get_allowed_globals();
 
 static int luasandbox_base_tostring(lua_State * L);
 static int luasandbox_math_random(lua_State * L);
@@ -101,7 +101,7 @@ ZEND_EXTERN_MODULE_GLOBALS(luasandbox);
 
 /** {{{  luasandbox_lib_register
  */
-void luasandbox_lib_register(lua_State * L TSRMLS_DC)
+void luasandbox_lib_register(lua_State * L)
 {
 	// Load the standard libraries that we need
 	lua_pushcfunction(L, luaopen_base);
@@ -140,7 +140,7 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 			continue;
 		}
 		key = lua_tolstring(L, -1, &key_len);
-		if (!zend_hash_str_exists(luasandbox_lib_get_allowed_globals(TSRMLS_C), key, key_len)) {
+		if (!zend_hash_str_exists(luasandbox_lib_get_allowed_globals(), key, key_len)) {
 			// Not allowed, delete it
 			lua_pushnil(L);
 			lua_setglobal(L, key);
@@ -210,7 +210,7 @@ static void luasandbox_lib_filter_table(lua_State * L, char ** member_names)
 /* }}} */
 
 /** {{{ luasandbox_lib_destroy_globals */
-void luasandbox_lib_destroy_globals(TSRMLS_D)
+void luasandbox_lib_destroy_globals()
 {
 	if (LUASANDBOX_G(allowed_globals)) {
 		zend_hash_destroy(LUASANDBOX_G(allowed_globals));
@@ -224,7 +224,7 @@ void luasandbox_lib_destroy_globals(TSRMLS_D)
  *
  * Get a HashTable of allowed global variables
  */
-static HashTable * luasandbox_lib_get_allowed_globals(TSRMLS_D)
+static HashTable * luasandbox_lib_get_allowed_globals()
 {
 	int i, n;
 	if (LUASANDBOX_G(allowed_globals)) {

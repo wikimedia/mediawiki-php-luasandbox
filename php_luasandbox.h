@@ -35,7 +35,7 @@ extern zend_module_entry luasandbox_module_entry;
 
 int luasandbox_call_php(lua_State * L);
 int luasandbox_call_lua(php_luasandbox_obj * sandbox, zval * sandbox_zval,
-	int nargs, int nresults, int errfunc TSRMLS_DC);
+	int nargs, int nresults, int errfunc);
 
 PHP_MINIT_FUNCTION(luasandbox);
 PHP_MSHUTDOWN_FUNCTION(luasandbox);
@@ -119,8 +119,8 @@ static inline void luasandbox_leave_php(lua_State * L, php_luasandbox_obj * inte
 
 /* library.c */
 
-void luasandbox_lib_register(lua_State * L TSRMLS_DC);
-void luasandbox_lib_destroy_globals(TSRMLS_D);
+void luasandbox_lib_register(lua_State * L);
+void luasandbox_lib_destroy_globals();
 
 /* luasandbox_lstrlib.c */
 
@@ -133,7 +133,7 @@ void luasandbox_data_conversion_init(lua_State * L);
 int luasandbox_push_zval(lua_State * L, zval * z, HashTable *recursionGuard);
 void luasandbox_push_zval_userdata(lua_State * L, zval * z);
 int luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
-	zval * sandbox_zval, HashTable * recursionGuard TSRMLS_DC);
+	zval * sandbox_zval, HashTable * recursionGuard);
 void luasandbox_wrap_fatal(lua_State * L);
 int luasandbox_is_fatal(lua_State * L, int index);
 int luasandbox_is_trace_error(lua_State * L, int index);
