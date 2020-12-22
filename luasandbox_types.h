@@ -61,10 +61,6 @@ typedef struct {
 ZEND_BEGIN_MODULE_GLOBALS(luasandbox)
 	/* Stored as a value rather than a pointer to avoid segfaults. Inspired by https://github.com/php/php-src/blob/master/ext/pcre/php_pcre.c.*/
 	HashTable allowed_globals;
-	/* Lua C libraries loaders. */
-	HashTable library_loaders;
-	/* A table of additional Lua C libraries. */
-	HashTable additional_libraries;
 	long active_count;
 ZEND_END_MODULE_GLOBALS(luasandbox)
 
@@ -77,62 +73,29 @@ typedef struct {
 } php_luasandbox_alloc;
 
 struct _php_luasandbox_obj {
-#if PHP_VERSION_ID < 70000
-	zend_object std;
-#endif
 	lua_State * state;
 	php_luasandbox_alloc alloc;
 	int in_php;
 	int in_lua;
-#if PHP_VERSION_ID < 70000
-	zval * current_zval; /* The zval for the LuaSandbox which is currently executing Lua code */
-#else
 	zval current_zval; /* The zval for the LuaSandbox which is currently executing Lua code */
-#endif
 	volatile int timed_out;
 	int is_cpu_limited;
 	luasandbox_timer_set timer;
 	int function_index;
 	unsigned int random_seed;
 	int allow_pause;
-#if PHP_VERSION_ID >= 70000
 	zend_object std;
-#endif
 };
 typedef struct _php_luasandbox_obj php_luasandbox_obj;
 
 struct _php_luasandboxfunction_obj {
-#if PHP_VERSION_ID < 70000
-	zend_object std;
-	zval * sandbox;
-	int index;
-#else
 	zval sandbox;
 	int index;
 	zend_object std;
-#endif
 };
 typedef struct _php_luasandboxfunction_obj php_luasandboxfunction_obj;
 
 // Accessor macros
-#if PHP_VERSION_ID < 70000
-
-static inline php_luasandbox_obj *php_luasandbox_fetch_object(zend_object *obj) {
-	return (php_luasandbox_obj *)obj;
-}
-
-static inline php_luasandboxfunction_obj *php_luasandboxfunction_fetch_object(zend_object *obj) {
-	return (php_luasandboxfunction_obj *)obj;
-}
-
-#define GET_LUASANDBOX_OBJ(z) (php_luasandbox_obj *)zend_object_store_get_object(z TSRMLS_CC)
-#define GET_LUASANDBOXFUNCTION_OBJ(z) (php_luasandboxfunction_obj *)zend_object_store_get_object(z TSRMLS_CC)
-#define LUASANDBOXFUNCTION_SANDBOX_IS_OK(pfunc) (pfunc)->sandbox
-#define LUASANDBOXFUNCTION_GET_SANDBOX_ZVALPTR(pfunc) (pfunc)->sandbox
-#define LUASANDBOX_GET_CURRENT_ZVAL_PTR(psandbox) (psandbox)->current_zval
-
-#else
-
 static inline php_luasandbox_obj *php_luasandbox_fetch_object(zend_object *obj) {
 	return (php_luasandbox_obj *)((char*)(obj) - XtOffsetOf(php_luasandbox_obj, std));
 }
@@ -146,7 +109,5 @@ static inline php_luasandboxfunction_obj *php_luasandboxfunction_fetch_object(ze
 #define LUASANDBOXFUNCTION_SANDBOX_IS_OK(pfunc) !Z_ISUNDEF((pfunc)->sandbox)
 #define LUASANDBOXFUNCTION_GET_SANDBOX_ZVALPTR(pfunc) &((pfunc)->sandbox)
 #define LUASANDBOX_GET_CURRENT_ZVAL_PTR(psandbox) &((psandbox)->current_zval)
-
-#endif
 
 #endif /*LUASANDBOX_TYPES_H*/

@@ -20,8 +20,8 @@ char luasandbox_timeout_message[] = "The maximum execution time for this script 
 
 #ifdef LUASANDBOX_NO_CLOCK
 
-void luasandbox_timer_minit(TSRMLS_D) {}
-void luasandbox_timer_mshutdown(TSRMLS_D) {}
+void luasandbox_timer_minit() {}
+void luasandbox_timer_mshutdown() {}
 
 void luasandbox_timer_create(luasandbox_timer_set * lts,
 		php_luasandbox_obj * sandbox) {
@@ -228,7 +228,6 @@ void luasandbox_timer_timeout_error(lua_State *L)
 static char * luasandbox_timer_get_cfunction_name(lua_State *L)
 {
 	static char buffer[1024];
-	TSRMLS_FETCH();
 
 	lua_CFunction f = lua_tocfunction(L, -1);
 	if (!f) {
@@ -239,29 +238,14 @@ static char * luasandbox_timer_get_cfunction_name(lua_State *L)
 	}
 
 	lua_getupvalue(L, -1, 1);
-#if PHP_VERSION_ID < 70000
-	zval ** callback_pp = (zval**)lua_touserdata(L, -1);
-	if (!callback_pp || !*callback_pp) {
-		return NULL;
-	}
-	char * callback_name;
-	zend_bool ok = zend_is_callable(*callback_pp, IS_CALLABLE_CHECK_SILENT, &callback_name TSRMLS_CC);
-#else
 	zval * callback_p = (zval*)lua_touserdata(L, -1);
 	if (!callback_p) {
 		return NULL;
 	}
 	zend_string * callback_name;
 	zend_bool ok = zend_is_callable(callback_p, IS_CALLABLE_CHECK_SILENT, &callback_name);
-#endif
 	if (ok) {
-		snprintf(buffer, sizeof(buffer), "%s",
-#if PHP_VERSION_ID < 70000
-			callback_name
-#else
-			ZSTR_VAL(callback_name)
-#endif
-		);
+		snprintf(buffer, sizeof(buffer), "%s", ZSTR_VAL(callback_name));
 		return buffer;
 	} else {
 		return NULL;
@@ -299,12 +283,8 @@ static void luasandbox_timer_profiler_hook(lua_State *L, lua_Debug *ar)
 		prof_name_size += strlen(name);
 	}
 
-#if PHP_VERSION_ID < 70000
-	char prof_name[prof_name_size];
-#else
 	zend_string *zstr = zend_string_alloc(prof_name_size, 0);
 	char *prof_name = ZSTR_VAL(zstr);
-#endif
 
 	if (!name) {
 		if (ar->linedefined > 0) {
@@ -324,18 +304,6 @@ static void luasandbox_timer_profiler_hook(lua_State *L, lua_Debug *ar)
 
 	luasandbox_timer_set * lts = &sandbox->timer;
 	HashTable * ht = lts->function_counts;
-#if PHP_VERSION_ID < 70000
-	// Key length in zend_hash conventionally includes the null byte
-	uint key_length = (uint)strlen(prof_name) + 1;
-	ulong h = zend_inline_hash_func(prof_name, key_length);
-	size_t * elt;
-	if (SUCCESS == zend_hash_quick_find(ht, prof_name, key_length, h, (void**)&elt)) {
-		(*elt) += signal_count;
-	} else {
-		size_t init = signal_count;
-		zend_hash_quick_add(ht, prof_name, key_length, h, (void**)&init, sizeof(size_t), NULL);
-	}
-#else
 	ZSTR_LEN(zstr) = strlen(prof_name);
 	zval *elt = zend_hash_find(ht, zstr);
 	if (elt != NULL) {
@@ -346,24 +314,23 @@ static void luasandbox_timer_profiler_hook(lua_State *L, lua_Debug *ar)
 		zend_hash_add(ht, zstr, &v);
 	}
 	zend_string_release(zstr);
-#endif
 
 	lts->total_count += signal_count;
 }
 
-void luasandbox_timer_minit(TSRMLS_D)
+void luasandbox_timer_minit()
 {
 	timer_hash = NULL;
 	timer_hash_entries = 0;
 	timer_hash_size = 0;
 
 	if (pthread_rwlock_init(&timer_hash_rwlock, NULL) != 0) {
-		php_error_docref(NULL TSRMLS_CC, E_ERROR,
+		php_error_docref(NULL, E_ERROR,
 				"Unable to allocate timer rwlock: %s", strerror(errno));
 	}
 }
 
-void luasandbox_timer_mshutdown(TSRMLS_D)
+void luasandbox_timer_mshutdown()
 {
 	int status;
 	size_t i;
@@ -371,7 +338,7 @@ void luasandbox_timer_mshutdown(TSRMLS_D)
 	status = pthread_rwlock_wrlock(&timer_hash_rwlock);
 	if (status != 0) {
 		// Some other error
-		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+		php_error_docref(NULL, E_WARNING,
 				"Unable to acquire timer rwlock for writing, leaking timers: %s", strerror(errno));
 		return;
 	}
@@ -494,8 +461,7 @@ static luasandbox_timer * luasandbox_timer_create_one(
 	memset(&ev, 0, sizeof(ev));
 
 	if (sem_init(&lt->semaphore, 0, 1) != 0) {
-		TSRMLS_FETCH();
-		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+		php_error_docref(NULL, E_WARNING,
 			"Unable to create semaphore: %s", strerror(errno));
 		luasandbox_timer_free(lt);
 		return NULL;
@@ -507,16 +473,14 @@ static luasandbox_timer * luasandbox_timer_create_one(
 	ev.sigev_value.sival_int = lt->id;
 
 	if (pthread_getcpuclockid(pthread_self(), &lt->clock_id) != 0) {
-		TSRMLS_FETCH();
-		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+		php_error_docref(NULL, E_WARNING,
 			"Unable to get thread clock ID: %s", strerror(errno));
 		luasandbox_timer_free(lt);
 		return NULL;
 	}
 
 	if (timer_create(lt->clock_id, &ev, &lt->timer) != 0) {
-		TSRMLS_FETCH();
-		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+		php_error_docref(NULL, E_WARNING,
 			"Unable to create timer: %s", strerror(errno));
 		luasandbox_timer_free(lt);
 		return NULL;
@@ -551,8 +515,7 @@ static void luasandbox_timer_set_periodic(luasandbox_timer * lt, struct timespec
 	its.it_interval = *period;
 	its.it_value = *period;
 	if (timer_settime(lt->timer, 0, &its, NULL) != SUCCESS) {
-		TSRMLS_FETCH();
-		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+		php_error_docref(NULL, E_WARNING,
 			"timer_settime(): %s", strerror(errno));
 	}
 }
@@ -599,8 +562,7 @@ static void luasandbox_timer_stop_one(luasandbox_timer * lt, struct timespec * r
 	its.it_value = zero;
 	its.it_interval = zero;
 	if (timer_settime(lt->timer, 0, &its, NULL) != SUCCESS) {
-		TSRMLS_FETCH();
-		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+		php_error_docref(NULL, E_WARNING,
 			"timer_settime(): %s", strerror(errno));
 	}
 
@@ -615,15 +577,13 @@ static void luasandbox_timer_stop_one(luasandbox_timer * lt, struct timespec * r
 			break;
 		}
 		if (errno != EINTR) {
-			TSRMLS_FETCH();
-			php_error_docref(NULL TSRMLS_CC, E_WARNING,
+			php_error_docref(NULL, E_WARNING,
 				"sem_wait(): %s", strerror(errno));
 			break;
 		}
 	}
 	if (timer_delete(lt->timer) != SUCCESS) {
-		TSRMLS_FETCH();
-		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+		php_error_docref(NULL, E_WARNING,
 			"timer_delete(): %s", strerror(errno));
 	}
 	luasandbox_timer_free(lt);
@@ -654,8 +614,7 @@ static luasandbox_timer * luasandbox_timer_alloc()
 	status = pthread_rwlock_wrlock(&timer_hash_rwlock);
 	if (status != SUCCESS) {
 		// Some other error
-		TSRMLS_FETCH();
-		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+		php_error_docref(NULL, E_WARNING,
 				"Unable to acquire timer rwlock for writing: %s", strerror(errno));
 		return NULL;
 	}
@@ -704,8 +663,7 @@ static luasandbox_timer *luasandbox_timer_lookup(int id)
 	status = pthread_rwlock_rdlock(&timer_hash_rwlock);
 	if (status != SUCCESS) {
 		// Some other error
-		TSRMLS_FETCH();
-		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+		php_error_docref(NULL, E_WARNING,
 				"Unable to acquire timer rwlock for reading: %s", strerror(errno));
 		return NULL;
 	}
@@ -733,8 +691,7 @@ static void luasandbox_timer_free(luasandbox_timer *lt)
 	status = pthread_rwlock_wrlock(&timer_hash_rwlock);
 	if (status != SUCCESS) {
 		// Some other error
-		TSRMLS_FETCH();
-		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+		php_error_docref(NULL, E_WARNING,
 				"Unable to acquire timer semaphore: %s", strerror(errno));
 		return;
 	}

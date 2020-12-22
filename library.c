@@ -52,18 +52,14 @@ ZEND_EXTERN_MODULE_GLOBALS(luasandbox);
 
 /** {{{ global_allowed
  */
-static zend_bool global_allowed( zend_string * global TSRMLS_DC) {
-#if PHP_VERSION_ID < 70000
-	return zend_hash_exists( &LUASANDBOX_G(allowed_globals), ZSTR_VAL(global) );
-#else
+static zend_bool global_allowed( zend_string * global) {
 	return zend_hash_exists( &LUASANDBOX_G(allowed_globals), global );
-#endif
 }
 /* }}} */
 
 /** {{{  luasandbox_lib_register
  */
-void luasandbox_lib_register(lua_State * L TSRMLS_DC)
+void luasandbox_lib_register(lua_State * L)
 {
 	// Load the standard libraries that we need
 	lua_pushcfunction(L, luaopen_base);
@@ -91,22 +87,9 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 	luasandbox_lib_filter_table(L, luasandbox_allowed_debug_members);
 	lua_setglobal(L, "debug");
 
-	// Load additional libraries:
-	zend_string * lib_z;
-	zval * loader_z;
-	ZEND_HASH_FOREACH_STR_KEY_VAL(&LUASANDBOX_G(library_loaders), lib_z, loader_z)
-		lua_CFunction loader_ptr = Z_PTR_P(loader_z);
-		if ( loader_ptr ) {
-			lua_pushcfunction( L, loader_ptr );
-			lua_call( L, 0, 1 );
-			lua_setglobal( L, ZSTR_VAL(lib_z) );
-		}
-	ZEND_HASH_FOREACH_END();
-	
 	// Remove any globals that aren't in a whitelist. This is mostly to remove
 	// unsafe functions from the base library.
 	lua_pushnil(L);
-	zend_string * global;
 	while (lua_next(L, LUA_GLOBALSINDEX) != 0) {
 		const char * key;
 		size_t key_len;
@@ -117,7 +100,7 @@ void luasandbox_lib_register(lua_State * L TSRMLS_DC)
 		key = lua_tolstring(L, -1, &key_len);
 		zend_string * global;
 		global = zend_string_init( key, key_len, 0 );
-		if ( !global_allowed( global TSRMLS_CC ) ) {
+		if ( !global_allowed( global ) ) {
 			// Not allowed, delete it
 			lua_pushnil(L);
 			lua_setglobal(L, key);
