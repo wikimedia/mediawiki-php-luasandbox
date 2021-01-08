@@ -10,10 +10,16 @@
     <email>tstarling@wikimedia.org</email>
     <active>yes</active>
   </lead>
-  <date>2018-10-11</date>
+  <developer>
+    <name>Kunal Mehta</name>
+    <user>legoktm</user>
+    <email>legoktm@member.fsf.org</email>
+    <active>yes</active>
+  </developer>
+  <date>2021-03-04</date>
   <version>
-    <release>3.0.3</release>
-    <api>3.0.3</api>
+    <release>4.0.0</release>
+    <api>4.0.0</api>
   </version>
   <stability>
     <release>stable</release>
@@ -21,7 +27,12 @@
   </stability>
   <license>MIT</license>
   <notes>
-    - Fix ZTS build on PHP 7+ (Patch by Remi Collet)
+    - Add docbook documentation (for php.net)
+    - Flag optional and variadic parameters properly for PHP reflection
+    - Remove memory leaks in data_conversion.c
+    - Drop PHP5 and HHVM compatibility
+    - Add PHP 8 support
+    - Windows compilation fixes
   </notes>
   <contents>
     <dir name="/">
@@ -120,16 +131,26 @@
   <dependencies>
     <required>
       <php>
-        <min>5.4.0</min>
+        <min>7.2.0</min>
       </php>
       <pearinstaller>
-        <min>1.7.0</min>
+        <min>1.10.0</min>
       </pearinstaller>
     </required>
   </dependencies>
   <providesextension>luasandbox</providesextension>
   <extsrcrelease/>
   <changelog>
+    <release>
+      <date>2018-10-11</date>
+      <version>
+        <release>3.0.3</release>
+        <api>3.0.3</api>
+      </version>
+      <notes>
+        - Fix ZTS build on PHP 7+ (Patch by Remi Collet)
+      </notes>
+    </release>
     <release>
       <date>2018-10-09</date>
       <version>
