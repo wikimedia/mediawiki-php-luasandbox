@@ -44,9 +44,6 @@ try {
 	print $e->getMessage() . "\n";
 }
 
-// HHVM leaks it otherwise, and the warning makes the test fail
-unset( $sandbox, $luaFactorial, $chunk, $e, $ret );
-
 --EXPECTF--
 3628800
 array(1) {

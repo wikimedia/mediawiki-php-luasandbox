@@ -56,9 +56,6 @@ foreach( [
 	}
 }
 
-// HHVM leaks it otherwise, and the warning makes the test fail
-unset( $sandbox );
-
 --EXPECTF--
 samples: OK
 seconds: OK

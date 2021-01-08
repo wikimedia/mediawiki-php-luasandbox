@@ -16,10 +16,6 @@
 
 #include "luasandbox_compat.h"
 
-#ifdef HHVM
-using std::isfinite;
-#endif
-
 static void luasandbox_throw_runtimeerror(lua_State * L, zval * sandbox_zval, const char *message);
 
 static inline int luasandbox_protect_recursion(zval * z, HashTable ** recursionGuard, int * allocated);

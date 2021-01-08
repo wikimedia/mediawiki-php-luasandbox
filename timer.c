@@ -493,8 +493,6 @@ static luasandbox_timer * luasandbox_timer_create_one(
 
 /**
  * Set an interval timer.
- * Warning: This function is called from a timer event handler, and so cannot
- * call into the HHVM runtime.
  */
 static void luasandbox_timer_set_one_time(luasandbox_timer * lt, struct timespec * ts)
 {

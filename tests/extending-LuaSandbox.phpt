@@ -24,9 +24,6 @@ var_dump( $sandbox );
 
 echo "ok\n";
 
-// HHVM leaks it otherwise, and the warning makes the test fail
-unset( $sandbox );
-
 --EXPECT--
 object(ExtendedLuaSandbox)#1 (5) {
   ["var1"]=>

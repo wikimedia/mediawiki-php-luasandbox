@@ -89,9 +89,6 @@ foreach ( $tests as $desc => $info ) {
 	}
 }
 
-// HHVM leaks it otherwise, and the warning makes the test fail
-unset( $sandbox, $func, $e, $ret, $errorFunc );
-
 --EXPECT--
 Normal: success
 User error: xp: [string ""]:1: runtime error

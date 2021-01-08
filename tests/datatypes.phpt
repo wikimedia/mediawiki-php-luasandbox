@@ -61,9 +61,6 @@ try {
 	printf( "EXCEPTION: %s\n", $e->getMessage() );
 }
 
-// HHVM leaks it otherwise, and the warning makes the test fail
-unset( $ret, $func, $sandbox );
-
 --EXPECT--
 null:                     NULL
 int:                      123
@@ -82,3 +79,4 @@ array with reference:     array ( 0 => 42, )
 function, pass-through:   FUNC: ok
 function, called:         FUNC: ok
 function, returned:       FUNC: ok
+

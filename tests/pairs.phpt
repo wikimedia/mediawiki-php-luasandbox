@@ -104,9 +104,6 @@ foreach ( $tests as $desc => $func ) {
 	}
 }
 
-// HHVM leaks it otherwise, and the warning makes the test fail
-unset( $sandbox );
-
 --EXPECT--
 Normal: array (
   0 => 'Ok',

@@ -97,15 +97,12 @@
         <file name="xpcall.phpt" role="test"/>
       </dir>
       <file name="alloc.c" role="src"/>
-      <file name="config.cmake" role="src"/>
       <file name="config.m4" role="src"/>
       <file name="COPYING" role="doc"/>
       <file name="CREDITS" role="doc"/>
       <file name="data_conversion.c" role="src"/>
       <file name="Doxyfile" role="src"/>
-      <file name="ext_luasandbox.php" role="src"/>
       <file name="FindLua51cpp.cmake" role="src"/>
-      <file name="hhvm-test.sh" role="src"/>
       <file name="library.c" role="src"/>
       <file name="luasandbox.c" role="src"/>
       <file name="luasandbox.ini" role="src"/>

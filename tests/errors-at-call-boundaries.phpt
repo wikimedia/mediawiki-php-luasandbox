@@ -67,9 +67,6 @@ doTest( 'LuaSandboxFunction::call', function () {
 	);
 } );
 
-// HHVM leaks it otherwise, and the warning makes the test fail
-unset( $sandbox );
-
 --EXPECT--
 LuaSandbox::callFunction: Exception: not enough memory
 LuaSandbox::registerLibrary 1: Exception: not enough memory

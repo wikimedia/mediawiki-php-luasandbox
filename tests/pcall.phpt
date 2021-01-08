@@ -37,9 +37,6 @@ foreach ( $tests as $desc => $code ) {
 	}
 }
 
-// HHVM leaks it otherwise, and the warning makes the test fail
-unset( $sandbox, $e );
-
 --EXPECT--
 Normal: success
 User error: Caught: [string ""]:1: runtime error

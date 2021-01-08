@@ -126,9 +126,6 @@ try {
 	echo "Exception: " . $ex->getMessage() . "\n";
 }
 
-// HHVM leaks it otherwise, and the warning makes the test fail
-unset( $sandbox, $f );
-
 --EXPECT--
 array(1) {
   [0]=>

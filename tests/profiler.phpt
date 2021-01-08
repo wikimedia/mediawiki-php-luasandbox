@@ -43,9 +43,6 @@ echo "Percent: " . $sandbox->getProfilerFunctionReport( LuaSandbox::PERCENT )['c
 // Test that disabling the profiler doesn't explode
 $sandbox->disableProfiler();
 
-// HHVM leaks it otherwise, and the warning makes the test fail
-unset( $sandbox );
-
 --EXPECTF--
 Samples: %d
 Seconds: %f

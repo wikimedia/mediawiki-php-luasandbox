@@ -51,9 +51,6 @@ foreach ( $tests as $desc => $info ) {
 	}
 }
 
-// HHVM leaks it otherwise, and the warning makes the test fail
-unset( $sandbox, $res, $e );
-
 --EXPECT--
 Runtime error: Caught: runtime error
 Fatal error: LuaSandboxFatalError: fatal error
