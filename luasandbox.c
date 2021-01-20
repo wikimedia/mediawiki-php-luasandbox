@@ -1616,7 +1616,7 @@ static int LuaSandbox_registerLibrary_protected(lua_State* L) {
 		lua_createtable(L, 0, zend_hash_num_elements(functions));
 	}
 
-	ulong lkey;
+	zend_ulong lkey;
 	zend_string *key;
 	zval *callback;
 	ZEND_HASH_FOREACH_KEY_VAL(functions, lkey, key, callback)

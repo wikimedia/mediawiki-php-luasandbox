@@ -286,7 +286,15 @@ static int luasandbox_math_random(lua_State * L)
 {
 	php_luasandbox_obj * sandbox = luasandbox_get_php_obj(L);
 
+#ifdef PHP_WIN32
+	// MSVC does not provide rand_r(). Note that srand/rand still does not
+	// share state with PHP's rand() because PHP's rand() is an alias for mt_rand()
+	// (and does not use C srand/rand) as of PHP 7.1.
+	int i = rand();
+#else
 	int i = rand_r(&sandbox->random_seed);
+#endif
+
 	if (i >= RAND_MAX) {
 		i -= RAND_MAX;
 	}
@@ -323,6 +331,9 @@ static int luasandbox_math_randomseed(lua_State * L)
 {
 	php_luasandbox_obj * sandbox = luasandbox_get_php_obj(L);
 	sandbox->random_seed = (unsigned int)luaL_checkint(L, 1);
+#ifdef PHP_WIN32
+	srand(sandbox->random_seed);
+#endif
 	return 0;
 }
 /* }}} */
@@ -438,21 +449,21 @@ static int luasandbox_base_xpcall (lua_State *L)
  */
 static int luasandbox_os_clock(lua_State * L)
 {
-	double clock;
+	double clk;
 
 #ifdef LUASANDBOX_NO_CLOCK
-	clock = ((double)clock())/(double)CLOCKS_PER_SEC;
+	clk = ((double)clock())/(double)CLOCKS_PER_SEC;
 #else
 	struct timespec ts;
 	php_luasandbox_obj * sandbox = luasandbox_get_php_obj(L);
 	luasandbox_timer_get_usage(&sandbox->timer, &ts);
-	clock = ts.tv_sec + 1e-9 * ts.tv_nsec;
+	clk = ts.tv_sec + 1e-9 * ts.tv_nsec;
 #endif
 
 	// Reduce precision to 20μs to mitigate timing attacks
-	clock = round(clock * 50000) / 50000;
+	clk = round(clk * 50000) / 50000;
 
-	lua_pushnumber(L, (lua_Number)clock);
+	lua_pushnumber(L, (lua_Number)clk);
 	return 1;
 }
 

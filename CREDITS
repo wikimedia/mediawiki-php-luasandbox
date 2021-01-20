@@ -1,4 +1,5 @@
-;; luasandbox
+;Lua Sandbox library for PHP
+
 Tim Starling [tstarling] <tstarling@wikimedia.org> (lead)
 Brad Jorsch <bjorsch@wikimedia.org>
 Kunal Mehta <legoktm@wikimedia.org>

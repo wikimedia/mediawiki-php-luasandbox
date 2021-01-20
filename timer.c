@@ -4,7 +4,6 @@
 
 #include <errno.h>
 #include <time.h>
-#include <semaphore.h>
 #include <lua.h>
 #include <lauxlib.h>
 
@@ -13,6 +12,7 @@
 #include "luasandbox_timer.h"
 
 #ifndef LUASANDBOX_NO_CLOCK
+#include <semaphore.h>
 #include <pthread.h>
 #endif
 
@@ -33,7 +33,7 @@ int luasandbox_timer_enable_profiler(luasandbox_timer_set * lts, struct timespec
 	return 0;
 }
 int luasandbox_timer_start(luasandbox_timer_set * lts) {
-	return 0;
+	return 1;
 }
 void luasandbox_timer_stop(luasandbox_timer_set * lts) {}
 void luasandbox_timer_destroy(luasandbox_timer_set * lts) {}

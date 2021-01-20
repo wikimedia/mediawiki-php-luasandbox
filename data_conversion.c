@@ -201,7 +201,7 @@ static int luasandbox_push_hashtable(lua_State * L, HashTable * ht, HashTable * 
 		return 1;
 	}
 
-	ulong lkey;
+	zend_ulong lkey;
 	zend_string *key;
 	zval *value;
 	ZEND_HASH_FOREACH_KEY_VAL(ht, lkey, key, value)
@@ -274,7 +274,7 @@ int luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 				// where the integer size is greater than the mantissa size.
 				i = (long)integerPart;
 				if (LONG_MAX < (1LL << DBL_MANT_DIG)
-					|| labs(i) < (1L << DBL_MANT_DIG))
+					|| labs(i) < (1LL << DBL_MANT_DIG))
 				{
 					ZVAL_LONG(z, i);
 				} else {

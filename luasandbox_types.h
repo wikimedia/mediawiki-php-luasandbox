@@ -1,10 +1,27 @@
 #ifndef LUASANDBOX_TYPES_H
 #define LUASANDBOX_TYPES_H
 
-#include <semaphore.h>
 #include "php.h"
 
-#ifdef CLOCK_REALTIME
+#ifndef LUASANDBOX_NO_CLOCK
+#include <semaphore.h>
+#endif
+
+#ifdef LUASANDBOX_NO_CLOCK
+
+typedef struct {
+	// structs must have at least one member
+	int unused;
+} luasandbox_timer;
+
+typedef struct {
+	struct timespec profiler_period;
+	HashTable * function_counts;
+	long total_count;
+	int is_paused;
+} luasandbox_timer_set;
+
+#else /*LUASANDBOX_NO_CLOCK*/
 
 struct _php_luasandbox_obj;
 
@@ -46,17 +63,7 @@ typedef struct {
 	volatile long overrun_count;
 } luasandbox_timer_set;
 
-#else /*CLOCK_REALTIME*/
-
-typedef struct {} luasandbox_timer;
-typedef struct {
-	struct timespec profiler_period;
-	HashTable * function_counts;
-	long total_count;
-	int is_paused;
-} luasandbox_timer_set;
-
-#endif /*CLOCK_REALTIME*/
+#endif /*LUASANDBOX_NO_CLOCK*/
 
 ZEND_BEGIN_MODULE_GLOBALS(luasandbox)
 	HashTable * allowed_globals;

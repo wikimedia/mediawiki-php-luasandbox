@@ -3,20 +3,6 @@
 
 #include "luasandbox_types.h"
 
-#ifdef CLOCK_REALTIME
-
-#ifdef CLOCK_THREAD_CPUTIME_ID
-#define LUASANDBOX_CLOCK_ID CLOCK_THREAD_CPUTIME_ID
-#else
-#define LUASANDBOX_CLOCK_ID CLOCK_REALTIME
-#endif
-
-#else /*CLOCK_REALTIME*/
-
-#define LUASANDBOX_NO_CLOCK
-
-#endif /*CLOCK_REALTIME*/
-
 void luasandbox_timer_minit();
 void luasandbox_timer_mshutdown();
 
