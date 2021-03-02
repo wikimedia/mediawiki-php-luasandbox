@@ -50,7 +50,7 @@ sudo apt-get install php-luasandbox
 deb http://ftp.debian.org/debian stretch-backports main
 ]]>
    </screen>
-   to their sources.list.
+   to their <link xlink:href="https://manpages.debian.org/stretch/apt/sources.list.5.en.html">sources.list</link>.
   </para>
  </section>
 
