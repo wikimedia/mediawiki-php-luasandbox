@@ -10,12 +10,12 @@
     <email>tstarling@wikimedia.org</email>
     <active>yes</active>
   </lead>
-  <developer>
+  <lead>
     <name>Kunal Mehta</name>
     <user>legoktm</user>
     <email>legoktm@member.fsf.org</email>
     <active>yes</active>
-  </developer>
+  </lead>
   <date>2021-03-04</date>
   <version>
     <release>4.0.1</release>
