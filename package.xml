@@ -18,8 +18,8 @@
   </developer>
   <date>2021-03-04</date>
   <version>
-    <release>4.0.0</release>
-    <api>4.0.0</api>
+    <release>4.0.1</release>
+    <api>4.0.1</api>
   </version>
   <stability>
     <release>stable</release>
@@ -27,12 +27,7 @@
   </stability>
   <license>MIT</license>
   <notes>
-    - Add docbook documentation (for php.net)
-    - Flag optional and variadic parameters properly for PHP reflection
-    - Remove memory leaks in data_conversion.c
-    - Drop PHP5 and HHVM compatibility
-    - Add PHP 8 support
-    - Windows compilation fixes
+    - Add missing file to package.xml tarball
   </notes>
   <contents>
     <dir name="/">
@@ -117,6 +112,7 @@
       <file name="library.c" role="src"/>
       <file name="luasandbox.c" role="src"/>
       <file name="luasandbox.ini" role="src"/>
+      <file name="luasandbox_compat.h" role="src"/>
       <file name="luasandbox_lstrlib.c" role="src"/>
       <file name="luasandbox_lstrlib.patch" role="src"/>
       <file name="luasandbox_timer.h" role="src"/>
@@ -141,6 +137,21 @@
   <providesextension>luasandbox</providesextension>
   <extsrcrelease/>
   <changelog>
+    <release>
+      <date>2021-03-04</date>
+      <version>
+        <release>4.0.0</release>
+        <api>4.0.0</api>
+      </version>
+      <notes>
+        - Add docbook documentation (for php.net)
+        - Flag optional and variadic parameters properly for PHP reflection
+        - Remove memory leaks in data_conversion.c
+        - Drop PHP5 and HHVM compatibility
+        - Add PHP 8 support
+        - Windows compilation fixes
+      </notes>
+    </release>
     <release>
       <date>2018-10-11</date>
       <version>

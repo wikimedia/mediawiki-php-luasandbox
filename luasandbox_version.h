@@ -1,1 +1,1 @@
-#define LUASANDBOX_VERSION "4.0.0"
+#define LUASANDBOX_VERSION "4.0.1"
