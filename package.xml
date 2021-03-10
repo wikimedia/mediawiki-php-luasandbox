@@ -16,6 +16,12 @@
     <email>legoktm@member.fsf.org</email>
     <active>yes</active>
   </lead>
+  <lead>
+    <name>Timo Tijhof</name>
+    <user>krinkle</user>
+    <email>krinklemail@gmail.com</email>
+    <active>yes</active>
+  </lead>
   <date>2021-03-10</date>
   <version>
     <release>4.0.1</release>
