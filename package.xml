@@ -22,10 +22,10 @@
     <email>krinklemail@gmail.com</email>
     <active>yes</active>
   </lead>
-  <date>2021-03-10</date>
+  <date>2021-05-18</date>
   <version>
-    <release>4.0.1</release>
-    <api>4.0.1</api>
+    <release>4.0.2</release>
+    <api>4.0.2</api>
   </version>
   <stability>
     <release>stable</release>
@@ -33,7 +33,7 @@
   </stability>
   <license>MIT</license>
   <notes>
-    - Add missing file to package.xml tarball
+    - Add config.w32 package.xml tarball (Closes #80850)
   </notes>
   <contents>
     <dir name="/">
@@ -144,6 +144,16 @@
   <providesextension>luasandbox</providesextension>
   <extsrcrelease/>
   <changelog>
+    <release>
+      <date>2021-03-10</date>
+      <version>
+        <release>4.0.1</release>
+        <api>4.0.1</api>
+      </version>
+      <notes>
+        - Add missing file to package.xml tarball
+      </notes>
+    </release>
     <release>
       <date>2021-03-04</date>
       <version>
