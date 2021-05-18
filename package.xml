@@ -110,6 +110,7 @@
       </dir>
       <file name="alloc.c" role="src"/>
       <file name="config.m4" role="src"/>
+      <file name="config.w32" role="src"/>
       <file name="COPYING" role="doc"/>
       <file name="CREDITS" role="doc"/>
       <file name="data_conversion.c" role="src"/>
