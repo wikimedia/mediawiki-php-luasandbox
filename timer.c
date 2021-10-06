@@ -244,7 +244,7 @@ static char * luasandbox_timer_get_cfunction_name(lua_State *L)
 		return NULL;
 	}
 	zend_string * callback_name;
-	zend_bool ok = zend_is_callable(callback_p, IS_CALLABLE_CHECK_SILENT, &callback_name);
+	zend_bool ok = zend_is_callable(callback_p, 0, &callback_name);
 
 	if (ok) {
 		snprintf(buffer, sizeof(buffer), "%s", ZSTR_VAL(callback_name));
