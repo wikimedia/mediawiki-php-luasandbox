@@ -3,6 +3,7 @@ Extending LuaSandbox
 --FILE--
 <?php
 // bugs T59292 and T205370
+#[AllowDynamicProperties]
 class ExtendedLuaSandbox extends LuaSandbox {
 	public $var1;
 	public $var2;
