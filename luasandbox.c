@@ -1035,7 +1035,11 @@ PHP_METHOD(LuaSandbox, getProfilerFunctionReport)
 	}
 
 	// Sort the input array in descending order of time usage
+#if PHP_VERSION_ID < 80000
+	zend_hash_sort(counts, (compare_func_t)luasandbox_sort_profile, 0);
+#else
 	zend_hash_sort(counts, luasandbox_sort_profile, 0);
+#endif
 
 	array_init_size(return_value, zend_hash_num_elements(counts));
 
