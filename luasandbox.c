@@ -361,6 +361,7 @@ static object_constructor_ret_t luasandbox_new(zend_class_entry *ce)
 
 	zend_object_std_init(&sandbox->std, ce);
 	object_properties_init(&sandbox->std, ce);
+	sandbox->std.handlers = &luasandbox_object_handlers;
 	sandbox->alloc.memory_limit = (size_t)-1;
 	sandbox->allow_pause = 1;
 
@@ -370,7 +371,6 @@ static object_constructor_ret_t luasandbox_new(zend_class_entry *ce)
 	// Initialise the timer
 	luasandbox_timer_create(&sandbox->timer, sandbox);
 
-	sandbox->std.handlers = &luasandbox_object_handlers;
 	LUASANDBOX_G(active_count)++;
 	return &sandbox->std;
 }
