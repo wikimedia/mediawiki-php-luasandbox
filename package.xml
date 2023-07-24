@@ -22,10 +22,10 @@
     <email>krinklemail@gmail.com</email>
     <active>yes</active>
   </lead>
-  <date>2022-09-23</date>
+  <date>2023-07-25</date>
   <version>
-    <release>4.1.0</release>
-    <api>4.1.0</api>
+    <release>4.1.1</release>
+    <api>4.1.1</api>
   </version>
   <stability>
     <release>stable</release>
@@ -33,7 +33,8 @@
   </stability>
   <license>MIT</license>
   <notes>
-    - Add PHP 8.2 support
+    - Fix segmentation fault when memory limit is exceeded in LuaSandbox init
+    - Fix incorrect version reported by phpversion('luasandbox')
   </notes>
   <contents>
     <dir name="/">
@@ -118,7 +119,6 @@
       <file name="FindLua51cpp.cmake" role="src"/>
       <file name="library.c" role="src"/>
       <file name="luasandbox.c" role="src"/>
-      <file name="luasandbox.ini" role="src"/>
       <file name="luasandbox_compat.h" role="src"/>
       <file name="luasandbox_lstrlib.c" role="src"/>
       <file name="luasandbox_lstrlib.patch" role="src"/>
@@ -144,6 +144,16 @@
   <providesextension>luasandbox</providesextension>
   <extsrcrelease/>
   <changelog>
+    <release>
+      <date>2022-09-23</date>
+      <version>
+        <release>4.1.0</release>
+        <api>4.1.0</api>
+      </version>
+      <notes>
+        - Add PHP 8.2 support
+      </notes>
+    </release>
     <release>
       <date>2021-05-19</date>
       <version>
