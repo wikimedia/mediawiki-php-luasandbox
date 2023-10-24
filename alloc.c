@@ -8,6 +8,8 @@
 
 #include <lua.h>
 #include <lauxlib.h>
+#include <string.h>
+#include <limits.h>
 
 #include "php.h"
 #include "php_luasandbox.h"
@@ -57,6 +59,26 @@ static inline int luasandbox_update_memory_accounting(php_luasandbox_alloc * all
 }
 /* }}} */
 
+/** {{{ luasandbox_update_gc_pause
+ * Scale the GC pause size so that collection will start before an OOM occurs (T349462)
+ */
+static inline void luasandbox_update_gc_pause(lua_State * L, php_luasandbox_alloc * alloc)
+{
+	size_t limit = alloc->memory_limit;
+	size_t usage = alloc->memory_usage;
+
+	// Guard against overflow and division by zero
+	if (limit >= SIZE_MAX / 90 || usage == 0) {
+		return;
+	}
+	size_t pause = limit * 90 / usage;
+	if (pause > 200) {
+		pause = 200;
+	}
+	lua_gc(L, LUA_GCSETPAUSE, (int)pause);
+}
+/* }}} */
+
 /** {{{ luasandbox_php_alloc
  *
  * The Lua allocator function. Use PHP's request-local allocator as a backend.
@@ -73,15 +95,20 @@ static void *luasandbox_php_alloc(void *ud, void *ptr, size_t osize, size_t nsiz
 		return NULL;
 	}
 
+	luasandbox_update_gc_pause(obj->state, &obj->alloc);
+
 	if (nsize == 0) {
 		if (ptr) {
 			efree(ptr);
 		}
 		nptr = NULL;
 	} else if (osize == 0) {
-		nptr = emalloc(nsize);
+		nptr = ecalloc(1, nsize);
 	} else {
 		nptr = erealloc(ptr, nsize);
+		if (nsize > osize) {
+			memset(nptr + osize, 0, nsize - osize);
+		}
 	}
 	obj->in_php --;
 	return nptr;

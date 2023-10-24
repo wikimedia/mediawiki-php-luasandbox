@@ -392,6 +392,9 @@ static lua_State * luasandbox_newstate(php_luasandbox_obj * intern)
 
 	lua_atpanic(L, luasandbox_panic);
 
+	// Increase the GC step size (T349462)
+	lua_gc(L, LUA_GCSETSTEPMUL, 2000);
+
 	// Register the standard library
 	luasandbox_lib_register(L);
 
