@@ -247,7 +247,7 @@ PHP_MINIT_FUNCTION(luasandbox)
 		"PERCENT", sizeof("PERCENT")-1, LUASANDBOX_PERCENT);
 
 	INIT_CLASS_ENTRY(ce, "LuaSandboxError", luasandbox_empty_methods);
-	luasandboxerror_ce = compat_zend_register_internal_class_ex(&ce, zend_exception_get_default());
+	luasandboxerror_ce = compat_zend_register_internal_class_ex(&ce, zend_ce_exception);
 	zend_declare_class_constant_long(luasandboxerror_ce,
 		"RUN", sizeof("RUN")-1, LUA_ERRRUN);
 	zend_declare_class_constant_long(luasandboxerror_ce,
