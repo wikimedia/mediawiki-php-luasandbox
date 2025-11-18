@@ -29,6 +29,7 @@ static int luasandbox_math_randomseed(lua_State * L);
 static int luasandbox_base_pcall(lua_State * L);
 static int luasandbox_base_xpcall(lua_State *L);
 static int luasandbox_os_clock(lua_State * L);
+static int luasandbox_base_unpack(lua_State * L);
 
 #if LUA_VERSION_NUM < 502
 static int luasandbox_base_pairs(lua_State *L);
@@ -147,13 +148,15 @@ void luasandbox_lib_register(lua_State * L)
 		}
 	}
 
-	// Install our own versions of tostring, pcall, xpcall
+	// Install our own versions of tostring, pcall, xpcall, unpack
 	lua_pushcfunction(L, luasandbox_base_tostring);
 	lua_setglobal(L, "tostring");
 	lua_pushcfunction(L, luasandbox_base_pcall);
 	lua_setglobal(L, "pcall");
 	lua_pushcfunction(L, luasandbox_base_xpcall);
 	lua_setglobal(L, "xpcall");
+	lua_pushcfunction(L, luasandbox_base_unpack);
+	lua_setglobal(L, "unpack");
 
 	// Remove string.dump: may expose private data
 	lua_getglobal(L, "string");
@@ -466,7 +469,34 @@ static int luasandbox_os_clock(lua_State * L)
 	lua_pushnumber(L, (lua_Number)clk);
 	return 1;
 }
+/* }}} */
 
+/** {{{ luasandbox_base_unpack
+ *
+ * Fix an integer overflow vulnerability by applying the fix from Lua 5.2.3
+ * https://phabricator.wikimedia.org/T408135
+ */
+static int luasandbox_base_unpack(lua_State * L) {
+	int i, e;
+	unsigned int n;
+	luaL_checktype(L, 1, LUA_TTABLE);
+	i = luaL_optint(L, 2, 1);
+	e = luaL_opt(L, luaL_checkint, 3, luaL_getn(L, 1));
+	if (i > e) {
+		// empty range
+		return 0;
+	}
+	n = (unsigned int)e - (unsigned int)i;  /* number of elements minus 1 */
+	if (n > (INT_MAX - 10) || !lua_checkstack(L, ++n)) {
+		return luaL_error(L, "too many results to unpack");
+	}
+	lua_rawgeti(L, 1, i);  /* push arg[i] (avoiding overflow problems) */
+	while (i++ < e) {
+		// push arg[i + 1...e]
+		lua_rawgeti(L, 1, i);
+	}
+	return n;
+}
 /* }}} */
 
 #if LUA_VERSION_NUM < 502
