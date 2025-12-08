@@ -22,10 +22,10 @@
     <email>krinklemail@gmail.com</email>
     <active>yes</active>
   </lead>
-  <date>2023-12-13</date>
+  <date>2025-12-15</date>
   <version>
-    <release>4.1.2</release>
-    <api>4.1.2</api>
+    <release>4.1.3</release>
+    <api>4.1.3</api>
   </version>
   <stability>
     <release>stable</release>
@@ -33,7 +33,8 @@
   </stability>
   <license>MIT</license>
   <notes>
-    - Run the GC more aggressively, especially as usage approaches the limit (T349462)
+    - Support PHP 8.5 (Patch by Remi Collet)
+    - Fix segfault in unpack
   </notes>
   <contents>
     <dir name="/">
@@ -143,6 +144,16 @@
   <providesextension>luasandbox</providesextension>
   <extsrcrelease/>
   <changelog>
+    <release>
+      <date>2023-12-13</date>
+      <version>
+        <release>4.1.2</release>
+        <api>4.1.2</api>
+      </version>
+      <notes>
+        - Run the GC more aggressively, especially as usage approaches the limit (T349462)
+      </notes>
+    </release>
     <release>
       <date>2023-07-31</date>
       <version>
