@@ -1,0 +1,24 @@
+{
+	"name": "wikimedia/luasandbox",
+	"description": "LuaSandbox is an extension for running untrusted Lua code within a PHP web request. Code is run in a stripped-down, safe environment. Time and memory limits can be set.",
+	"type": "php-ext",
+	"license": "MIT",
+	"authors": [
+		{
+			"name": "Tim Starling",
+			"email": "tstarling@wikimedia.org"
+		},
+		{
+			"name": "Brad Jorsch",
+		},
+		{
+			"name": "Kunal Mehta"
+		},
+		{
+			"name": "Wikimedia Community"
+		}
+	],
+	"php-ext": {
+		"extension-name": "luasandbox"
+	}
+}
