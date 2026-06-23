@@ -15,4 +15,4 @@ object(LuaSandbox)#1 (0) {
 }
 object(LuaSandboxFunction)#2 (0) {
 }
-[string ""]:1: '=' expected near '<eof>'
+[string ""]:1: %a near %a

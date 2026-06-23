@@ -15,6 +15,7 @@
 #include "zend_exceptions.h"
 
 #include "luasandbox_compat.h"
+#include "luasandbox_lua_compat.h"
 
 static void luasandbox_throw_runtimeerror(lua_State * L, zval * sandbox_zval, const char *message);
 
@@ -261,11 +262,25 @@ int luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 			ZVAL_NULL(z);
 			break;
 		case LUA_TNUMBER: {
+#if LUA_VERSION_NUM >= 503
+			// Lua 5.3 and later distinguish integers from floats, so pass the
+			// distinction through to PHP rather than guessing from the value.
+			if (lua_isinteger(L, index)) {
+				lua_Integer i = lua_tointeger(L, index);
+				if (i >= LONG_MIN && i <= LONG_MAX) {
+					ZVAL_LONG(z, (long)i);
+				} else {
+					ZVAL_DOUBLE(z, lua_tonumber(L, index));
+				}
+			} else {
+				ZVAL_DOUBLE(z, lua_tonumber(L, index));
+			}
+			break;
+#else
 			long i;
 			double d, integerPart, fractionalPart;
-			// Lua only provides a single number type
-			// Convert it to a PHP integer if that can be done without loss
-			// of precision
+			// Lua 5.1 only provides a single number type. Convert it to a PHP
+			// integer if that can be done without loss of precision.
 			d = lua_tonumber(L, index);
 			fractionalPart = modf(d, &integerPart);
 			if (fractionalPart == 0.0 && integerPart >= LONG_MIN && integerPart <= LONG_MAX) {
@@ -284,6 +299,7 @@ int luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 				ZVAL_DOUBLE(z, d);
 			}
 			break;
+#endif
 		}
 		case LUA_TBOOLEAN:
 			ZVAL_BOOL(z, lua_toboolean(L, index));
@@ -695,13 +711,13 @@ void luasandbox_push_structured_trace(lua_State * L, int level)
 		lua_setfield(L, -2, "short_src");
 		lua_pushstring(L, ar.what);
 		lua_setfield(L, -2, "what");
-		lua_pushnumber(L, ar.currentline);
+		lua_pushinteger(L, ar.currentline);
 		lua_setfield(L, -2, "currentline");
 		lua_pushstring(L, ar.name);
 		lua_setfield(L, -2, "name");
 		lua_pushstring(L, ar.namewhat);
 		lua_setfield(L, -2, "namewhat");
-		lua_pushnumber(L, ar.linedefined);
+		lua_pushinteger(L, ar.linedefined);
 		lua_setfield(L, -2, "linedefined");
 		lua_rawseti(L, -2, i - level + 1);
 	}

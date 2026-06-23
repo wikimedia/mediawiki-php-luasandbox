@@ -15,6 +15,7 @@
 
 #include "php.h"
 #include "php_luasandbox.h"
+#include "luasandbox_lua_compat.h"
 
 #ifdef LUASANDBOX_NO_CLOCK
 #include <time.h>
@@ -31,10 +32,8 @@ static int luasandbox_base_xpcall(lua_State *L);
 static int luasandbox_os_clock(lua_State * L);
 static int luasandbox_base_unpack(lua_State * L);
 
-#if LUA_VERSION_NUM < 502
 static int luasandbox_base_pairs(lua_State *L);
 static int luasandbox_base_ipairs(lua_State *L);
-#endif
 
 /**
  * Allowed global variables. Omissions are:
@@ -59,7 +58,9 @@ char * luasandbox_allowed_globals[] = {
 	// base
 	"assert",
 	"error",
+#if LUA_VERSION_NUM < 502
 	"getfenv",
+#endif
 	"getmetatable",
 	"ipairs",
 	"next",
@@ -68,7 +69,9 @@ char * luasandbox_allowed_globals[] = {
 	"rawget",
 	"rawset",
 	"select",
+#if LUA_VERSION_NUM < 502
 	"setfenv",
+#endif
 	"setmetatable",
 	"tonumber",
 	"type",
@@ -81,6 +84,37 @@ char * luasandbox_allowed_globals[] = {
 	"math",
 	"os",
 	"debug",
+	NULL
+};
+
+/**
+ * Allowed members of the table library. The library is filtered rather than
+ * exposed wholesale because its contents vary between the Lua versions
+ * LuaSandbox supports, so a new version would otherwise silently add
+ * unreviewed functions to the sandbox. Omissions are:
+ *   * move: Copies an arbitrary range entirely within a C loop, so neither the
+ *     instruction count hook nor the memory limit can interrupt it. A single
+ *     table.move(t, 1, 2^40, 1, {}) ignores the CPU limit indefinitely.
+ *   * create: Lua 5.5 and later, unreviewed at present.
+ * Names not present in the Lua version being built against are ignored.
+ */
+char * luasandbox_allowed_table_members[] = {
+	"concat",
+	// 5.1 only
+	"foreach",
+	"foreachi",
+	"getn",
+	"insert",
+	// 5.1 only
+	"maxn",
+	// 5.2+ only
+	"pack",
+	"remove",
+	// 5.1 only
+	"setn",
+	"sort",
+	// 5.2+ only
+	"unpack",
 	NULL
 };
 
@@ -105,20 +139,20 @@ ZEND_EXTERN_MODULE_GLOBALS(luasandbox);
 void luasandbox_lib_register(lua_State * L)
 {
 	// Load the standard libraries that we need
-	lua_pushcfunction(L, luaopen_base);
-	lua_call(L, 0, 0);
-	lua_pushcfunction(L, luaopen_table);
-	lua_call(L, 0, 0);
-	lua_pushcfunction(L, luaopen_math);
-	lua_call(L, 0, 0);
-	lua_pushcfunction(L, luaopen_debug);
-	lua_call(L, 0, 0);
-	lua_pushcfunction(L, luaopen_os);
-	lua_call(L, 0, 0);
+	luasandbox_luaL_requiref(L, LUA_GNAME, luaopen_base);
+	luasandbox_luaL_requiref(L, LUA_TABLIBNAME, luaopen_table);
+	luasandbox_luaL_requiref(L, LUA_MATHLIBNAME, luaopen_math);
+	luasandbox_luaL_requiref(L, LUA_DBLIBNAME, luaopen_debug);
+	luasandbox_luaL_requiref(L, LUA_OSLIBNAME, luaopen_os);
 
 	// Install our own string library
 	lua_pushcfunction(L, luasandbox_open_string);
 	lua_call(L, 0, 0);
+
+	// Filter the table library
+	lua_getglobal(L, "table");
+	luasandbox_lib_filter_table(L, luasandbox_allowed_table_members);
+	lua_setglobal(L, "table");
 
 	// Filter the os library
 	lua_getglobal(L, "os");
@@ -132,8 +166,9 @@ void luasandbox_lib_register(lua_State * L)
 
 	// Remove any globals that aren't in a whitelist. This is mostly to remove
 	// unsafe functions from the base library.
+	luasandbox_pushglobaltable(L);
 	lua_pushnil(L);
-	while (lua_next(L, LUA_GLOBALSINDEX) != 0) {
+	while (lua_next(L, -2) != 0) {
 		const char * key;
 		size_t key_len;
 		lua_pop(L, 1);
@@ -147,6 +182,7 @@ void luasandbox_lib_register(lua_State * L)
 			lua_setglobal(L, key);
 		}
 	}
+	lua_pop(L, 1);
 
 	// Install our own versions of tostring, pcall, xpcall, unpack
 	lua_pushcfunction(L, luasandbox_base_tostring);
@@ -179,17 +215,16 @@ void luasandbox_lib_register(lua_State * L)
 	lua_setfield(L, -2, "clock");
 	lua_pop(L, 1);
 
-	// Install our own versions of pairs and ipairs, if necessary
-#if LUA_VERSION_NUM < 502
-	lua_getfield(L, LUA_GLOBALSINDEX, "pairs");
+	// Install our own versions of pairs and ipairs to preserve __pairs and
+	// __ipairs support across the Lua versions supported by LuaSandbox.
+	lua_getglobal(L, "pairs");
 	lua_setfield(L, LUA_REGISTRYINDEX, "luasandbox_old_pairs");
-	lua_getfield(L, LUA_GLOBALSINDEX, "ipairs");
+	lua_getglobal(L, "ipairs");
 	lua_setfield(L, LUA_REGISTRYINDEX, "luasandbox_old_ipairs");
 	lua_pushcfunction(L, luasandbox_base_pairs);
 	lua_setglobal(L, "pairs");
 	lua_pushcfunction(L, luasandbox_base_ipairs);
 	lua_setglobal(L, "ipairs");
-#endif
 }
 /* }}} */
 
@@ -310,14 +345,14 @@ static int luasandbox_math_random(lua_State * L)
 		case 1: {  /* only upper limit */
 			int u = luaL_checkint(L, 1);
 			luaL_argcheck(L, 1<=u, 1, "interval is empty");
-			lua_pushnumber(L, floor(r*u)+1);  /* int between 1 and `u' */
+			lua_pushinteger(L, (lua_Integer)(floor(r*u)+1));  /* int between 1 and `u' */
 			break;
 		}
 		case 2: {  /* lower and upper limits */
 			int l = luaL_checkint(L, 1);
 			int u = luaL_checkint(L, 2);
 			luaL_argcheck(L, l<=u, 2, "interval is empty");
-			lua_pushnumber(L, floor(r*(u-l+1))+l);  /* int between `l' and `u' */
+			lua_pushinteger(L, (lua_Integer)(floor(r*(u-l+1))+l));  /* int between `l' and `u' */
 			break;
 		}
 		default: return luaL_error(L, "wrong number of arguments");
@@ -499,7 +534,6 @@ static int luasandbox_base_unpack(lua_State * L) {
 }
 /* }}} */
 
-#if LUA_VERSION_NUM < 502
 /** {{{ luasandbox_base_pairs
  *
  * This is our implementation of the Lua function pairs(). It allows the Lua
@@ -533,4 +567,3 @@ static int luasandbox_base_ipairs (lua_State *L)
 	return 3;
 }
 /* }}} */
-#endif

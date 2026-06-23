@@ -4,7 +4,7 @@
 # for help on how to use this file to configure Doxygen.
 
 PROJECT_NAME           = "LuaSandbox"
-PROJECT_BRIEF          = "extension to run Lua 5.1 code from PHP"
+PROJECT_BRIEF          = "extension to run Lua code from PHP"
 OUTPUT_DIRECTORY       = doc
 JAVADOC_AUTOBRIEF      = YES
 QT_AUTOBRIEF           = YES

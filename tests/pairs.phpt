@@ -98,7 +98,11 @@ foreach ( $tests as $desc => $func ) {
 	$sandbox->setCPULimit( 0.25 );
 	$sandbox->setMemoryLimit( 100000 );
 	try {
-		print var_export( $sandbox->callFunction( $func ), 1 ) . "\n";
+		$result = $sandbox->callFunction( $func );
+		if ( $func === 'pairs_return' ) {
+			ksort( $result[0] );
+		}
+		print var_export( $result, 1 ) . "\n";
 	} catch ( LuaSandboxError $e ) {
 		echo "LuaSandboxError: " . $e->getMessage() . "\n";
 	}

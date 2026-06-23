@@ -3,7 +3,9 @@
 ARG_WITH("luasandbox", "Include luasandbox support", "no");
 
 if (PHP_LUASANDBOX != "no") {
-    if (CHECK_LIB("lua5.1.lib", "luasandbox", PHP_LUASANDBOX) &&
+    // Whichever Lua library is found first wins, as in config.m4
+    if ((CHECK_LIB("lua5.1.lib", "luasandbox", PHP_LUASANDBOX) ||
+            CHECK_LIB("lua5.4.lib", "luasandbox", PHP_LUASANDBOX)) &&
             CHECK_HEADER_ADD_INCLUDE("lua.h", "CFLAGS_LUASANDBOX", PHP_PHP_BUILD + "\\include;" + PHP_LUASANDBOX)) {
         EXTENSION("luasandbox", "alloc.c data_conversion.c library.c luasandbox.c timer.c luasandbox_lstrlib.c", PHP_LUASANDBOX_SHARED);
     } else {

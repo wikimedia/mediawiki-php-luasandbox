@@ -89,12 +89,12 @@ foreach ( $tests as $desc => $info ) {
 	}
 }
 
---EXPECT--
+--EXPECTF--
 Normal: success
 User error: xp: [string ""]:1: runtime error
 Error in error handler: LuaSandboxError: [string ""]:1: error in handler
 Unconvertible error in error handler: LuaSandboxError: unknown error
-Numeric error in error handler: LuaSandboxError: [string ""]:1: 2
+Numeric error in error handler: LuaSandboxError: %A2
 Argument check error: xp: [string ""]:1: bad argument #1 to 'byte' (string expected, got no value)
 Protected infinite recursion: LuaSandboxError: not enough memory
 Infinite recursion in handler: LuaSandboxError: not enough memory

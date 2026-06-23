@@ -18,6 +18,7 @@
 
 #include "lauxlib.h"
 #include "lualib.h"
+#include "luasandbox_lua_compat.h"
 
 #ifdef LUAI_MAXCALLS
 #define LUASANDBOX_MAX_MATCH_DEPTH LUAI_MAXCALLS
@@ -155,7 +156,7 @@ static int str_dump (lua_State *L) {
   luaL_checktype(L, 1, LUA_TFUNCTION);
   lua_settop(L, 1);
   luaL_buffinit(L,&b);
-  if (lua_dump(L, writer, &b) != 0)
+  if (luasandbox_lua_dump(L, writer, &b) != 0)
     luaL_error(L, "unable to dump given function");
   luaL_pushresult(&b);
   return 1;
@@ -890,7 +891,7 @@ static void createmetatable (lua_State *L) {
 ** Open string library
 */
 int luasandbox_open_string (lua_State *L) {
-  luaL_register(L, LUA_STRLIBNAME, strlib);
+  luasandbox_luaL_register(L, LUA_STRLIBNAME, strlib);
 #if defined(LUA_COMPAT_GFIND)
   lua_getfield(L, -1, "gmatch");
   lua_setfield(L, -2, "gfind");
