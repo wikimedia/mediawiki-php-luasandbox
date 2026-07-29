@@ -1,4 +1,4 @@
-## 4.1.4 (unreleased)
+## 4.1.4 (2026-07-30)
 * Migrate from PECL to PIE ([T423562](https://phabricator.wikimedia.org/T423562))
 
 ## 4.1.3 (2025-12-15)
