@@ -331,7 +331,7 @@ int luasandbox_lua_to_zval(zval * z, lua_State * L, int index,
 
 			if (!success) {
 				// free the array created by array_init() above.
-				zval_dtor(z);
+				zval_ptr_dtor_nogc(z);
 				ZVAL_NULL(z);
 				return 0;
 			}

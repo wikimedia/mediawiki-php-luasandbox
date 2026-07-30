@@ -103,11 +103,11 @@ typedef struct _php_luasandboxfunction_obj php_luasandboxfunction_obj;
 
 // Accessor macros
 static inline php_luasandbox_obj *php_luasandbox_fetch_object(zend_object *obj) {
-	return (php_luasandbox_obj *)((char*)(obj) - XtOffsetOf(php_luasandbox_obj, std));
+	return (php_luasandbox_obj *)((char*)(obj) - offsetof(php_luasandbox_obj, std));
 }
 
 static inline php_luasandboxfunction_obj *php_luasandboxfunction_fetch_object(zend_object *obj) {
-	return (php_luasandboxfunction_obj *)((char*)(obj) - XtOffsetOf(php_luasandboxfunction_obj, std));
+	return (php_luasandboxfunction_obj *)((char*)(obj) - offsetof(php_luasandboxfunction_obj, std));
 }
 
 #define GET_LUASANDBOX_OBJ(z) php_luasandbox_fetch_object(Z_OBJ_P(z))
