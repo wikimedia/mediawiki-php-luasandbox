@@ -286,10 +286,10 @@ PHP_MINIT_FUNCTION(luasandbox)
 	luasandboxfunction_ce->create_object = luasandboxfunction_new;
 
 	memcpy(&luasandbox_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
-	luasandbox_object_handlers.offset = XtOffsetOf(php_luasandbox_obj, std);
+	luasandbox_object_handlers.offset = offsetof(php_luasandbox_obj, std);
 	luasandbox_object_handlers.free_obj = (zend_object_free_obj_t)luasandbox_free_storage;
 	memcpy(&luasandboxfunction_object_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));
-	luasandboxfunction_object_handlers.offset = XtOffsetOf(php_luasandboxfunction_obj, std);
+	luasandboxfunction_object_handlers.offset = offsetof(php_luasandboxfunction_obj, std);
 	luasandboxfunction_object_handlers.free_obj = (zend_object_free_obj_t)luasandboxfunction_free_storage;
 
 	luasandbox_timer_minit();
