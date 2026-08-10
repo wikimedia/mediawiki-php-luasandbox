@@ -38,6 +38,21 @@ static int luasandbox_base_ipairs(lua_State *L);
 #if LUA_VERSION_NUM >= 502
 static int luasandbox_base_setfenv(lua_State *L);
 static int luasandbox_base_getfenv(lua_State *L);
+
+static int luasandbox_math_atan2(lua_State * L);
+static int luasandbox_math_cosh(lua_State * L);
+static int luasandbox_math_sinh(lua_State * L);
+static int luasandbox_math_tanh(lua_State * L);
+static int luasandbox_math_pow(lua_State * L);
+static int luasandbox_math_frexp(lua_State * L);
+static int luasandbox_math_ldexp(lua_State * L);
+static int luasandbox_math_log10(lua_State * L);
+
+static int luasandbox_table_getn(lua_State * L);
+static int luasandbox_table_setn(lua_State * L);
+static int luasandbox_table_foreach(lua_State * L);
+static int luasandbox_table_foreachi(lua_State * L);
+static int luasandbox_table_maxn(lua_State * L);
 #endif
 
 /**
@@ -101,21 +116,20 @@ char * luasandbox_allowed_globals[] = {
  *     instruction count hook nor the memory limit can interrupt it. A single
  *     table.move(t, 1, 2^40, 1, {}) ignores the CPU limit indefinitely.
  *   * create: Lua 5.5 and later, unreviewed at present.
- * Names not present in the Lua version being built against are ignored.
+ * Names not present in the Lua version being built against are ignored here;
+ * foreach, foreachi, getn, maxn and setn are gone as of Lua 5.2, so
+ * luasandbox_lib_register() re-adds them as C functions instead.
  */
 char * luasandbox_allowed_table_members[] = {
 	"concat",
-	// 5.1 only
 	"foreach",
 	"foreachi",
 	"getn",
 	"insert",
-	// 5.1 only
 	"maxn",
 	// 5.2+ only
 	"pack",
 	"remove",
-	// 5.1 only
 	"setn",
 	"sort",
 	// 5.2+ only
@@ -158,6 +172,25 @@ void luasandbox_lib_register(lua_State * L)
 	lua_getglobal(L, "table");
 	luasandbox_lib_filter_table(L, luasandbox_allowed_table_members);
 	lua_setglobal(L, "table");
+
+#if LUA_VERSION_NUM >= 502
+	// Lua 5.2 removed table.foreach, table.foreachi, table.getn, table.maxn
+	// and table.setn. Restore them as their Lua 5.1 selves so that they're
+	// available across the Lua versions LuaSandbox supports, same as the
+	// rest of luasandbox_allowed_table_members.
+	lua_getglobal(L, "table");
+	lua_pushcfunction(L, luasandbox_table_foreach);
+	lua_setfield(L, -2, "foreach");
+	lua_pushcfunction(L, luasandbox_table_foreachi);
+	lua_setfield(L, -2, "foreachi");
+	lua_pushcfunction(L, luasandbox_table_getn);
+	lua_setfield(L, -2, "getn");
+	lua_pushcfunction(L, luasandbox_table_maxn);
+	lua_setfield(L, -2, "maxn");
+	lua_pushcfunction(L, luasandbox_table_setn);
+	lua_setfield(L, -2, "setn");
+	lua_pop(L, 1);
+#endif
 
 	// Filter the os library
 	lua_getglobal(L, "os");
@@ -223,6 +256,30 @@ void luasandbox_lib_register(lua_State * L)
 	lua_pushcfunction(L, luasandbox_math_randomseed);
 	lua_setfield(L, -2, "randomseed");
 	lua_pop(L, 1);
+
+#if LUA_VERSION_NUM >= 502
+	// Lua 5.2 deprecated these math functions and Lua 5.3 removed them.
+	// Restore them as their Lua 5.1 selves: thin wrappers around the
+	// equivalent libm calls, unchanged by any Lua version.
+	lua_getglobal(L, "math");
+	lua_pushcfunction(L, luasandbox_math_atan2);
+	lua_setfield(L, -2, "atan2");
+	lua_pushcfunction(L, luasandbox_math_cosh);
+	lua_setfield(L, -2, "cosh");
+	lua_pushcfunction(L, luasandbox_math_sinh);
+	lua_setfield(L, -2, "sinh");
+	lua_pushcfunction(L, luasandbox_math_tanh);
+	lua_setfield(L, -2, "tanh");
+	lua_pushcfunction(L, luasandbox_math_pow);
+	lua_setfield(L, -2, "pow");
+	lua_pushcfunction(L, luasandbox_math_frexp);
+	lua_setfield(L, -2, "frexp");
+	lua_pushcfunction(L, luasandbox_math_ldexp);
+	lua_setfield(L, -2, "ldexp");
+	lua_pushcfunction(L, luasandbox_math_log10);
+	lua_setfield(L, -2, "log10");
+	lua_pop(L, 1);
+#endif
 
 	// Install our own version of os.clock(), which uses our high-resolution
 	// usage timer
@@ -391,6 +448,99 @@ static int luasandbox_math_randomseed(lua_State * L)
 	return 0;
 }
 /* }}} */
+
+#if LUA_VERSION_NUM >= 502
+/** {{{ luasandbox_math_atan2
+ *
+ * Lua 5.1's math.atan2, removed from Lua as of 5.3.
+ */
+static int luasandbox_math_atan2(lua_State * L)
+{
+	lua_pushnumber(L, atan2(luaL_checknumber(L, 1), luaL_checknumber(L, 2)));
+	return 1;
+}
+/* }}} */
+
+/** {{{ luasandbox_math_cosh
+ *
+ * Lua 5.1's math.cosh, removed from Lua as of 5.3.
+ */
+static int luasandbox_math_cosh(lua_State * L)
+{
+	lua_pushnumber(L, cosh(luaL_checknumber(L, 1)));
+	return 1;
+}
+/* }}} */
+
+/** {{{ luasandbox_math_sinh
+ *
+ * Lua 5.1's math.sinh, removed from Lua as of 5.3.
+ */
+static int luasandbox_math_sinh(lua_State * L)
+{
+	lua_pushnumber(L, sinh(luaL_checknumber(L, 1)));
+	return 1;
+}
+/* }}} */
+
+/** {{{ luasandbox_math_tanh
+ *
+ * Lua 5.1's math.tanh, removed from Lua as of 5.3.
+ */
+static int luasandbox_math_tanh(lua_State * L)
+{
+	lua_pushnumber(L, tanh(luaL_checknumber(L, 1)));
+	return 1;
+}
+/* }}} */
+
+/** {{{ luasandbox_math_pow
+ *
+ * Lua 5.1's math.pow, removed from Lua as of 5.3 in favour of the ^ operator.
+ */
+static int luasandbox_math_pow(lua_State * L)
+{
+	lua_pushnumber(L, pow(luaL_checknumber(L, 1), luaL_checknumber(L, 2)));
+	return 1;
+}
+/* }}} */
+
+/** {{{ luasandbox_math_frexp
+ *
+ * Lua 5.1's math.frexp, removed from Lua as of 5.3.
+ */
+static int luasandbox_math_frexp(lua_State * L)
+{
+	int e;
+	lua_pushnumber(L, frexp(luaL_checknumber(L, 1), &e));
+	lua_pushinteger(L, e);
+	return 2;
+}
+/* }}} */
+
+/** {{{ luasandbox_math_ldexp
+ *
+ * Lua 5.1's math.ldexp, removed from Lua as of 5.3.
+ */
+static int luasandbox_math_ldexp(lua_State * L)
+{
+	lua_pushnumber(L, ldexp(luaL_checknumber(L, 1), luaL_checkint(L, 2)));
+	return 1;
+}
+/* }}} */
+
+/** {{{ luasandbox_math_log10
+ *
+ * Lua 5.1's math.log10, removed from Lua as of 5.3 in favour of
+ * math.log(x, 10).
+ */
+static int luasandbox_math_log10(lua_State * L)
+{
+	lua_pushnumber(L, log10(luaL_checknumber(L, 1)));
+	return 1;
+}
+/* }}} */
+#endif
 
 /** {{{ luasandbox_lib_rethrow_fatal
  *
@@ -704,6 +854,107 @@ static int luasandbox_base_setfenv(lua_State * L)
 			LUA_QL("setfenv") " cannot change environment of given object");
 	}
 	lua_pushvalue(L, funcidx);
+	return 1;
+}
+/* }}} */
+
+/** {{{ luasandbox_table_getn
+ *
+ * Lua 5.1's table.getn, removed from Lua as of 5.2 in favour of the #
+ * operator.
+ */
+static int luasandbox_table_getn(lua_State * L)
+{
+	luaL_checktype(L, 1, LUA_TTABLE);
+	lua_pushinteger(L, luaL_getn(L, 1));
+	return 1;
+}
+/* }}} */
+
+/** {{{ luasandbox_table_setn
+ *
+ * Lua 5.1's table.setn. This was already unsupported in a standard Lua 5.1
+ * build (one without LUA_COMPAT_GETN, which is how the Lua versions
+ * LuaSandbox is tested against are built): calling it raises "'setn' is
+ * obsolete" rather than doing anything. Reproduce that instead of silently
+ * discarding the requested size or implementing a real one, so that the
+ * behaviour switching from Lua 5.1 to a later version doesn't change.
+ */
+static int luasandbox_table_setn(lua_State * L)
+{
+	luaL_checktype(L, 1, LUA_TTABLE);
+	return luaL_error(L, LUA_QL("setn") " is obsolete");
+}
+/* }}} */
+
+/** {{{ luasandbox_table_foreach
+ *
+ * Lua 5.1's table.foreach, removed from Lua as of 5.2 in favour of pairs().
+ */
+static int luasandbox_table_foreach(lua_State * L)
+{
+	luaL_checktype(L, 1, LUA_TTABLE);
+	luaL_checktype(L, 2, LUA_TFUNCTION);
+	lua_pushnil(L);  // first key
+	while (lua_next(L, 1)) {
+		lua_pushvalue(L, 2);  // function
+		lua_pushvalue(L, -3);  // key
+		lua_pushvalue(L, -3);  // value
+		lua_call(L, 2, 1);
+		if (!lua_isnil(L, -1)) {
+			return 1;
+		}
+		lua_pop(L, 2);  // remove value and result
+	}
+	return 0;
+}
+/* }}} */
+
+/** {{{ luasandbox_table_foreachi
+ *
+ * Lua 5.1's table.foreachi, removed from Lua as of 5.2 in favour of ipairs().
+ */
+static int luasandbox_table_foreachi(lua_State * L)
+{
+	int i;
+	int n = luaL_getn(L, 1);
+	luaL_checktype(L, 1, LUA_TTABLE);
+	luaL_checktype(L, 2, LUA_TFUNCTION);
+	for (i = 1; i <= n; i++) {
+		lua_pushvalue(L, 2);  // function
+		lua_pushinteger(L, i);  // 1st argument
+		lua_rawgeti(L, 1, i);  // 2nd argument
+		lua_call(L, 2, 1);
+		if (!lua_isnil(L, -1)) {
+			return 1;
+		}
+		lua_pop(L, 1);  // remove nil result
+	}
+	return 0;
+}
+/* }}} */
+
+/** {{{ luasandbox_table_maxn
+ *
+ * Lua 5.1's table.maxn, removed from Lua as of 5.2. Unlike table.getn (the #
+ * operator, a border of the table's array part), this scans every entry for
+ * the largest numeric key, including non-sequential and non-integer ones.
+ */
+static int luasandbox_table_maxn(lua_State * L)
+{
+	lua_Number max = 0;
+	luaL_checktype(L, 1, LUA_TTABLE);
+	lua_pushnil(L);  // first key
+	while (lua_next(L, 1)) {
+		lua_pop(L, 1);  // remove value
+		if (lua_type(L, -1) == LUA_TNUMBER) {
+			lua_Number v = lua_tonumber(L, -1);
+			if (v > max) {
+				max = v;
+			}
+		}
+	}
+	lua_pushnumber(L, max);
 	return 1;
 }
 /* }}} */
