@@ -45,6 +45,15 @@
 #define LUA_MAXCAPTURES 32
 #endif
 
+// LUA_MAXINTEGER is a Lua 5.3+ macro, but lua_Integer itself has existed
+// since 5.1 (as ptrdiff_t, with no named limit macro). Compute the maximum
+// value of whatever signed integer type it turns out to be, rather than
+// assuming a particular width.
+#ifndef LUA_MAXINTEGER
+#define LUA_MAXINTEGER \
+	((lua_Integer)((1ULL << (sizeof(lua_Integer) * CHAR_BIT - 1)) - 1))
+#endif
+
 #if LUA_VERSION_NUM >= 502
 static inline int luasandbox_luaL_checkint(lua_State *L, int narg)
 {

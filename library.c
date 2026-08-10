@@ -55,6 +55,10 @@ static int luasandbox_table_foreachi(lua_State * L);
 static int luasandbox_table_maxn(lua_State * L);
 #endif
 
+static int luasandbox_table_move_key(lua_State * L, int idx, lua_Integer f,
+	lua_Integer e, lua_Integer * out);
+static int luasandbox_table_move(lua_State * L);
+
 /**
  * Allowed global variables. Omissions are:
  *   * pcall, xpcall: We have our own versions which don't allow interception of
@@ -112,13 +116,16 @@ char * luasandbox_allowed_globals[] = {
  * exposed wholesale because its contents vary between the Lua versions
  * LuaSandbox supports, so a new version would otherwise silently add
  * unreviewed functions to the sandbox. Omissions are:
- *   * move: Copies an arbitrary range entirely within a C loop, so neither the
- *     instruction count hook nor the memory limit can interrupt it. A single
- *     table.move(t, 1, 2^40, 1, {}) ignores the CPU limit indefinitely.
  *   * create: Lua 5.5 and later, unreviewed at present.
  * Names not present in the Lua version being built against are ignored here;
  * foreach, foreachi, getn, maxn and setn are gone as of Lua 5.2, so
- * luasandbox_lib_register() re-adds them as C functions instead.
+ * luasandbox_lib_register() re-adds them as C functions instead. move isn't
+ * in this list at all: the native version copies an arbitrary range entirely
+ * within a C loop, so neither the instruction count hook nor the memory
+ * limit can interrupt it (table.move(t, 1, 2^40, 1, {}) ignores the CPU
+ * limit indefinitely). luasandbox_lib_register() instead installs our own
+ * table.move, bounded by the source table's real size rather than by the
+ * requested range.
  */
 char * luasandbox_allowed_table_members[] = {
 	"concat",
@@ -191,6 +198,13 @@ void luasandbox_lib_register(lua_State * L)
 	lua_setfield(L, -2, "setn");
 	lua_pop(L, 1);
 #endif
+
+	// Install our own table.move, bounded by the source table's real size;
+	// see the comment on luasandbox_allowed_table_members.
+	lua_getglobal(L, "table");
+	lua_pushcfunction(L, luasandbox_table_move);
+	lua_setfield(L, -2, "move");
+	lua_pop(L, 1);
 
 	// Filter the os library
 	lua_getglobal(L, "os");
@@ -959,6 +973,140 @@ static int luasandbox_table_maxn(lua_State * L)
 }
 /* }}} */
 #endif
+
+// Threshold below which luasandbox_table_move() copies the [f, e] range
+// directly instead of walking the whole source table with lua_next(): a
+// range this short costs only a constant number of raw accesses regardless
+// of e - f, so it doesn't need the lua_next() walk's protection, and taking
+// this path keeps small moves on large tables as cheap as the native
+// table.move rather than paying for a full table scan every time.
+#define LUASANDBOX_TABLE_MOVE_SMALL_RANGE 10
+
+/** {{{ luasandbox_table_move_key
+ *
+ * If the value at the given stack index is an integer-valued key in
+ * [f, e], write it to *out and return 1; otherwise return 0.
+ */
+static int luasandbox_table_move_key(lua_State * L, int idx, lua_Integer f,
+	lua_Integer e, lua_Integer * out)
+{
+	if (lua_type(L, idx) == LUA_TNUMBER) {
+		lua_Number nk = lua_tonumber(L, idx);
+		lua_Integer ik = (lua_Integer)nk;
+		if ((lua_Number)ik == nk && ik >= f && ik <= e) {
+			*out = ik;
+			return 1;
+		}
+	}
+	return 0;
+}
+/* }}} */
+
+/** {{{ luasandbox_table_move
+ *
+ * A table.move which, unlike the native one, is safe to expose. For a range
+ * of at least LUASANDBOX_TABLE_MOVE_SMALL_RANGE elements, it walks the
+ * source table's actual entries with lua_next() instead of the requested
+ * [f, e] range, so its cost is bounded by the table's real size rather than
+ * by e - f, which the caller fully controls (table.move(t, 1, 2^40, 1, {})
+ * would otherwise iterate 2^40 times without LuaSandbox's instruction count
+ * hook, which only fires on Lua bytecode, ever getting a chance to run).
+ * Shorter ranges are copied directly instead, since a constant-bounded
+ * range can't be abused that way and it keeps small moves on large tables
+ * as cheap as the native table.move.
+ *
+ * Unlike the native table.move, this requires both the source and
+ * destination to be real tables: it doesn't support the __index/__newindex
+ * metamethod fallback the native version does, matching every other
+ * function in this file (foreach, foreachi, maxn, unpack, ...).
+ */
+static int luasandbox_table_move(lua_State * L)
+{
+	lua_Integer f = luaL_checkinteger(L, 2);
+	lua_Integer e = luaL_checkinteger(L, 3);
+	lua_Integer t = luaL_checkinteger(L, 4);
+	int tt = lua_isnoneornil(L, 5) ? 1 : 5;
+	int tmpidx;
+	lua_Integer ik;
+
+	luaL_checktype(L, 1, LUA_TTABLE);
+	luaL_checktype(L, tt, LUA_TTABLE);
+
+	if (e < f) {
+		// Empty range: nothing to move.
+		lua_pushvalue(L, tt);
+		return 1;
+	}
+
+	// Overflow checks ported from Lua 5.4's ltablib.c:tmove().
+	luaL_argcheck(L, f > 0 || e < LUA_MAXINTEGER + f, 3,
+		"too many elements to move");
+	luaL_argcheck(L, t <= LUA_MAXINTEGER - (e - f + 1) + 1, 4,
+		"destination wrap around");
+
+	if (e - f < LUASANDBOX_TABLE_MOVE_SMALL_RANGE) {
+		// Short range: copy it directly, choosing the iteration order that
+		// keeps an overlapping move correct, exactly as Lua's own tmove()
+		// does for the native table.move.
+		lua_Integer i;
+		if (!lua_rawequal(L, 1, tt) || t > e || t <= f) {
+			for (i = 0; i <= e - f; i++) {
+				lua_rawgeti(L, 1, f + i);
+				lua_rawseti(L, tt, t + i);
+			}
+		} else {
+			for (i = e - f; i >= 0; i--) {
+				lua_rawgeti(L, 1, f + i);
+				lua_rawseti(L, tt, t + i);
+			}
+		}
+		lua_pushvalue(L, tt);
+		return 1;
+	}
+
+	if (!lua_rawequal(L, 1, tt)) {
+		// Different tables can never overlap, so it's safe to write the
+		// destination directly while walking the source.
+		lua_pushnil(L);  // first key
+		while (lua_next(L, 1)) {
+			if (luasandbox_table_move_key(L, -2, f, e, &ik)) {
+				lua_pushvalue(L, -1);  // dup value
+				lua_rawseti(L, tt, t + (ik - f));
+			}
+			lua_pop(L, 1);  // remove value, leave key for lua_next
+		}
+		lua_pushvalue(L, tt);
+		return 1;
+	}
+
+	// Same table: the source and destination ranges may overlap, and
+	// mutating a table while lua_next() is traversing it is undefined
+	// behaviour, so collect the matching entries into a fresh table first
+	// and only write them into the source/destination once that traversal
+	// has finished. That also sidesteps needing to replicate the ordering
+	// (ascending vs descending) the native implementation uses to make an
+	// overlapping copy safe: nothing here reads from table 1 any more once
+	// the writes start.
+	lua_newtable(L);
+	tmpidx = lua_gettop(L);
+	lua_pushnil(L);  // first key
+	while (lua_next(L, 1)) {
+		if (luasandbox_table_move_key(L, -2, f, e, &ik)) {
+			lua_pushinteger(L, ik);
+			lua_pushvalue(L, -2);  // dup value
+			lua_rawset(L, tmpidx);  // tmp[ik] = value
+		}
+		lua_pop(L, 1);  // remove value, leave key for lua_next
+	}
+	lua_pushnil(L);  // first key
+	while (lua_next(L, tmpidx)) {
+		ik = lua_tointeger(L, -2);
+		lua_rawseti(L, tt, t + (ik - f));  // pops value, leaves key
+	}
+	lua_pushvalue(L, tt);
+	return 1;
+}
+/* }}} */
 
 /** {{{ luasandbox_base_pairs
  *
