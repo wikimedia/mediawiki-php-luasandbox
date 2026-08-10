@@ -35,6 +35,11 @@ static int luasandbox_base_unpack(lua_State * L);
 static int luasandbox_base_pairs(lua_State *L);
 static int luasandbox_base_ipairs(lua_State *L);
 
+#if LUA_VERSION_NUM >= 502
+static int luasandbox_base_setfenv(lua_State *L);
+static int luasandbox_base_getfenv(lua_State *L);
+#endif
+
 /**
  * Allowed global variables. Omissions are:
  *   * pcall, xpcall: We have our own versions which don't allow interception of
@@ -193,6 +198,17 @@ void luasandbox_lib_register(lua_State * L)
 	lua_setglobal(L, "xpcall");
 	lua_pushcfunction(L, luasandbox_base_unpack);
 	lua_setglobal(L, "unpack");
+
+#if LUA_VERSION_NUM >= 502
+	// Lua 5.2 removed setfenv/getfenv in favour of the _ENV upvalue.
+	// Reimplement them on top of _ENV so that code which builds an
+	// isolation model on stack-level setfenv/getfenv, such as Scribunto,
+	// keeps working.
+	lua_pushcfunction(L, luasandbox_base_setfenv);
+	lua_setglobal(L, "setfenv");
+	lua_pushcfunction(L, luasandbox_base_getfenv);
+	lua_setglobal(L, "getfenv");
+#endif
 
 	// Remove string.dump: may expose private data
 	lua_getglobal(L, "string");
@@ -533,6 +549,165 @@ static int luasandbox_base_unpack(lua_State * L) {
 	return n;
 }
 /* }}} */
+
+#if LUA_VERSION_NUM >= 502
+/** {{{ luasandbox_compat_getfunc
+ *
+ * Equivalent of Lua 5.1's lbaselib.c:getfunc(), which resolves argument 1 to
+ * a function: either the function value itself, or the function running at
+ * a given stack level (1 = the function that called setfenv/getfenv).
+ *
+ * Lua 5.1 numbers stack levels so that a tail call is visible as its own
+ * level, with no function: it leaves a placeholder "tail" debug frame where
+ * the caller used to be, since the real caller was already popped. Lua 5.2+
+ * no longer leaves that placeholder; the elided frame is simply gone and
+ * lua_getstack skips over it, which would silently shift every level number
+ * above a tail call. To keep the same numbering (and the same error for a
+ * level that lands on an elided frame) as Lua 5.1, walk the real stack and
+ * account for one virtual "tail" level each time ar.istailcall is set.
+ */
+static void luasandbox_compat_getfunc(lua_State * L, int opt)
+{
+	if (lua_isfunction(L, 1)) {
+		lua_pushvalue(L, 1);
+	} else {
+		lua_Debug ar;
+		int level = opt ? luaL_optint(L, 1, 1) : luaL_checkint(L, 1);
+		int real = 0;
+		int virt = 0;
+		int phantom = 0;
+		luaL_argcheck(L, level >= 0, 1, "level must be non-negative");
+		while (virt < level) {
+			if (phantom) {
+				// Step past the virtual "tail" level onto the real frame
+				// that follows it.
+				real++;
+				virt++;
+				phantom = 0;
+				continue;
+			}
+			if (!lua_getstack(L, real, &ar)) {
+				luaL_argerror(L, 1, "invalid level");
+			}
+			lua_getinfo(L, "t", &ar);
+			if (ar.istailcall) {
+				phantom = 1;
+				virt++;
+			} else {
+				real++;
+				virt++;
+			}
+		}
+		if (phantom) {
+			luaL_error(L, "no function environment for tail call at level %d",
+				level);
+		}
+		if (!lua_getstack(L, real, &ar)) {
+			luaL_argerror(L, 1, "invalid level");
+		}
+		lua_getinfo(L, "f", &ar);
+	}
+}
+/* }}} */
+
+/** {{{ luasandbox_compat_push_env
+ *
+ * Push the environment of the function at the given stack index: the value
+ * of its "_ENV" upvalue, or the sandbox's global table if it has none (e.g.
+ * a function which never refers to a global).
+ */
+static void luasandbox_compat_push_env(lua_State * L, int funcidx)
+{
+	int i = 1;
+	const char * name;
+	funcidx = luasandbox_lua_absindex(L, funcidx);
+	while ((name = lua_getupvalue(L, funcidx, i)) != NULL) {
+		if (strcmp(name, "_ENV") == 0) {
+			return;
+		}
+		lua_pop(L, 1);
+		i++;
+	}
+	luasandbox_pushglobaltable(L);
+}
+/* }}} */
+
+/** {{{ luasandbox_compat_set_env
+ *
+ * Set the environment of the function at the given stack index by
+ * overwriting its "_ENV" upvalue with the value at validx. Returns 1 on
+ * success, or 0 if the function has no "_ENV" upvalue to overwrite.
+ */
+static int luasandbox_compat_set_env(lua_State * L, int funcidx, int validx)
+{
+	int i = 1;
+	const char * name;
+	funcidx = luasandbox_lua_absindex(L, funcidx);
+	validx = luasandbox_lua_absindex(L, validx);
+	while ((name = lua_getupvalue(L, funcidx, i)) != NULL) {
+		lua_pop(L, 1);
+		if (strcmp(name, "_ENV") == 0) {
+			lua_pushvalue(L, validx);
+			lua_setupvalue(L, funcidx, i);
+			return 1;
+		}
+		i++;
+	}
+	return 0;
+}
+/* }}} */
+
+/** {{{ luasandbox_base_getfenv
+ *
+ * Reimplementation of Lua 5.1's getfenv() for Lua 5.2+, on top of the _ENV
+ * upvalue. See luasandbox_compat_getfunc() for the stack-level numbering
+ * caveat around tail calls.
+ */
+static int luasandbox_base_getfenv(lua_State * L)
+{
+	luasandbox_compat_getfunc(L, 1);
+	if (lua_iscfunction(L, -1)) {
+		// As with Lua 5.1's LUA_GLOBALSINDEX, a C function has no
+		// environment of its own; fall back to the sandbox's globals.
+		luasandbox_pushglobaltable(L);
+	} else {
+		luasandbox_compat_push_env(L, -1);
+	}
+	return 1;
+}
+/* }}} */
+
+/** {{{ luasandbox_base_setfenv
+ *
+ * Reimplementation of Lua 5.1's setfenv() for Lua 5.2+, on top of the _ENV
+ * upvalue. See luasandbox_compat_getfunc() for the stack-level numbering
+ * caveat around tail calls.
+ *
+ * Unlike Lua 5.1, setfenv(0, t) is not supported: Lua 5.1 used it to change
+ * the running thread's default environment, but Lua 5.2+ has no equivalent
+ * concept to change, only per-function _ENV upvalues.
+ */
+static int luasandbox_base_setfenv(lua_State * L)
+{
+	int funcidx;
+	luaL_checktype(L, 2, LUA_TTABLE);
+	if (lua_isnumber(L, 1) && lua_tonumber(L, 1) == 0) {
+		return luaL_error(L,
+			LUA_QL("setfenv") " cannot change environment of given object");
+	}
+	luasandbox_compat_getfunc(L, 0);
+	funcidx = lua_gettop(L);
+	if (lua_iscfunction(L, funcidx)
+		|| !luasandbox_compat_set_env(L, funcidx, 2)
+	) {
+		return luaL_error(L,
+			LUA_QL("setfenv") " cannot change environment of given object");
+	}
+	lua_pushvalue(L, funcidx);
+	return 1;
+}
+/* }}} */
+#endif
 
 /** {{{ luasandbox_base_pairs
  *
