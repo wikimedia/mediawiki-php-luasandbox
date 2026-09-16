@@ -32,7 +32,7 @@ if test "$PHP_LUASANDBOX" != "no"; then
 	AC_MSG_CHECKING([for Lua])
 	LUA_MODULE=
 	for i in $LUA_MODULES; do
-		if $PKG_CONFIG --exists "$i >= 5.1" 2>/dev/null; then
+		if $PKG_CONFIG --exists "$i >= 5.1" "$i < 5.5" 2>/dev/null; then
 			LUA_MODULE="$i"
 			break
 		fi
@@ -40,7 +40,7 @@ if test "$PHP_LUASANDBOX" != "no"; then
 
 	if test -z "$LUA_MODULE"; then
 		AC_MSG_RESULT([not found])
-		AC_MSG_ERROR([no pkg-config module for Lua 5.1 or later found (tried: $LUA_MODULES)])
+		AC_MSG_ERROR([no pkg-config module for Lua 5.1-5.4 found (tried: $LUA_MODULES)])
 	fi
 	LUA_MODVERSION=`$PKG_CONFIG --modversion "$LUA_MODULE"`
 	AC_MSG_RESULT([$LUA_MODULE $LUA_MODVERSION])
